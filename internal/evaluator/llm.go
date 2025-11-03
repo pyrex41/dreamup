@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dreamup/qa-agent/internal/agent"
 	openai "github.com/sashabaranov/go-openai"
@@ -50,7 +51,7 @@ func NewGameEvaluator(apiKey string) (*GameEvaluator, error) {
 
 	return &GameEvaluator{
 		client: client,
-		model:  "gpt-4-vision-preview", // GPT-4 Vision for image analysis
+		model:  "gpt-4o", // GPT-4o has vision capabilities
 	}, nil
 }
 
@@ -204,6 +205,9 @@ func (ge *GameEvaluator) EvaluateGame(ctx context.Context, screenshots []*agent.
 	// Parse JSON response
 	responseText := resp.Choices[0].Message.Content
 
+	// Strip markdown code fences if present
+	responseText = stripMarkdownCodeFence(responseText)
+
 	var score PlayabilityScore
 	if err := json.Unmarshal([]byte(responseText), &score); err != nil {
 		// If JSON parsing fails, return error with the raw response for debugging
@@ -211,6 +215,32 @@ func (ge *GameEvaluator) EvaluateGame(ctx context.Context, screenshots []*agent.
 	}
 
 	return &score, nil
+}
+
+// stripMarkdownCodeFence removes markdown code fence wrappers from JSON responses
+func stripMarkdownCodeFence(text string) string {
+	// Trim leading/trailing whitespace
+	text = strings.TrimSpace(text)
+
+	// Remove ```json and ``` wrappers if present
+	if strings.HasPrefix(text, "```json") {
+		// Find the closing ```
+		text = strings.TrimPrefix(text, "```json")
+		text = strings.TrimSpace(text)
+		if idx := strings.Index(text, "```"); idx != -1 {
+			text = text[:idx]
+		}
+	} else if strings.HasPrefix(text, "```") {
+		// Handle generic ``` fence
+		text = strings.TrimPrefix(text, "```")
+		text = strings.TrimSpace(text)
+		if idx := strings.Index(text, "```"); idx != -1 {
+			text = text[:idx]
+		}
+	}
+
+	// Trim any remaining whitespace
+	return strings.TrimSpace(text)
 }
 
 // SaveScoreToFile saves the playability score to a JSON file

@@ -114,11 +114,52 @@ var (
 		Type:     UITypeButton,
 		Required: false,
 	}
+
+	// CookieConsentPattern detects cookie consent buttons
+	CookieConsentPattern = UIPattern{
+		Name: "Cookie Consent",
+		Selectors: []string{
+			// Common IDs and classes (most specific first)
+			"#didomi-notice-agree-button", // Didomi CMP
+			"button.didomi-button",
+			"#accept-cookies",
+			"#cookie-accept",
+			"#acceptCookies",
+			".accept-cookies",
+			".cookie-accept",
+			".consent-accept",
+			"button.consent-accept",
+			// CMP (Consent Management Platform) specific
+			".fc-cta-consent", // OneTrust
+			".fc-button-background", // OneTrust alternate
+			"button.fc-button",
+			".qc-cmp2-summary-buttons button", // Quantcast
+			"#truste-consent-button", // TrustArc
+			".evidon-banner-acceptbutton", // Evidon
+			// Attribute-based selectors
+			"button[title*='accept' i]",
+			"button[title*='agree' i]",
+			"button[aria-label*='accept' i]",
+			"button[aria-label*='agree' i]",
+			"button[aria-label*='consent' i]",
+			"[data-testid='accept-cookies']",
+			"[data-testid='cookie-accept']",
+			"[data-testid='consent-accept']",
+			// Generic patterns (last resort)
+			"div[class*='cookie' i] button",
+			"div[class*='consent' i] button",
+			"div[id*='cookie' i] button",
+			"div[id*='consent' i] button",
+		},
+		Type:     UITypeButton,
+		Required: false,
+	}
 )
 
 // AllCommonPatterns returns all common UI patterns
 func AllCommonPatterns() []UIPattern {
 	return []UIPattern{
+		CookieConsentPattern,
 		StartButtonPattern,
 		GameCanvasPattern,
 		PauseButtonPattern,
@@ -237,4 +278,109 @@ func (d *UIDetector) GetGameCanvas() (string, error) {
 	}
 
 	return element.Selector, nil
+}
+
+// FindCookieConsentButton attempts to find a cookie consent button
+func (d *UIDetector) FindCookieConsentButton() (string, error) {
+	element, err := d.DetectPattern(CookieConsentPattern)
+	if err != nil {
+		return "", err
+	}
+
+	return element.Selector, nil
+}
+
+// HasCookieConsent checks if a cookie consent dialog is present
+func (d *UIDetector) HasCookieConsent() bool {
+	_, err := d.DetectPattern(CookieConsentPattern)
+	return err == nil
+}
+
+// AcceptCookieConsent attempts to accept cookie consent if present
+// Returns true if consent was found and clicked, false otherwise
+func (d *UIDetector) AcceptCookieConsent() (bool, error) {
+	// Use JavaScript to find and click cookie consent buttons
+	// This is more reliable than CSS selectors with chromedp
+	script := `
+(function() {
+	// Common consent button selectors and text patterns
+	const selectors = [
+		// CMPs
+		'#didomi-notice-agree-button',
+		'button.didomi-button',
+		'.fc-cta-consent',
+		'button[aria-label*="accept" i]',
+		'button[aria-label*="agree" i]',
+		'button[title*="accept" i]'
+	];
+
+	// Try specific selectors first
+	for (const selector of selectors) {
+		try {
+			const btn = document.querySelector(selector);
+			if (btn && btn.offsetParent !== null) {
+				btn.click();
+				return true;
+			}
+		} catch (e) {
+			// Invalid selector, continue
+			continue;
+		}
+	}
+
+	// Try finding buttons by text content - be very aggressive
+	const buttons = document.querySelectorAll('button, a[role="button"], div[role="button"], a, span[role="button"]');
+	for (const btn of buttons) {
+		const text = btn.textContent.toLowerCase().trim();
+		// Match common consent text patterns
+		if (text === 'accept all cookies' || text === 'accept all' ||
+		    text === 'accept cookies' || text === 'i accept' ||
+		    text.includes('accept all cookies') ||
+		    text.includes('accept') && text.includes('cookies') ||
+		    text.includes('accept') && text.includes('all') ||
+		    text.includes('agree') || text.includes('consent') ||
+		    text.includes('ok') || text.includes('got it') ||
+		    text.includes('allow') || text.includes('continue') ||
+		    text === 'j\'accepte') {
+			// Check if button is visible
+			if (btn.offsetParent !== null) {
+				btn.click();
+				return true;
+			}
+		}
+	}
+
+	// Try to check iframes for consent dialogs
+	const iframes = document.querySelectorAll('iframe');
+	for (const iframe of iframes) {
+		try {
+			const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+			const iframeButtons = iframeDoc.querySelectorAll('button, a[role="button"], div[role="button"]');
+			for (const btn of iframeButtons) {
+				const text = btn.textContent.toLowerCase().trim();
+				if (text.includes('accept') || text.includes('agree') || text.includes('consent')) {
+					btn.click();
+					return true;
+				}
+			}
+		} catch (e) {
+			// Cross-origin iframe, skip
+			continue;
+		}
+	}
+
+	return false;
+})();
+`
+
+	var clicked bool
+	err := chromedp.Run(d.ctx,
+		chromedp.Evaluate(script, &clicked),
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to run cookie consent script: %w", err)
+	}
+
+	return clicked, nil
 }

@@ -91,9 +91,26 @@ func runTest(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("   Saved: %s\n", initialScreenshot.Filepath)
 
-	// Wait a bit for gameplay
+	// Wait a moment for page to fully load and cookie consent to appear
+	fmt.Println("⏳ Waiting for page to load...")
+	time.Sleep(4 * time.Second)
+
+	// Handle cookie consent if present
+	fmt.Println("🍪 Checking for cookie consent...")
+	detector := agent.NewUIDetector(bm.GetContext())
+	if clicked, err := detector.AcceptCookieConsent(); err != nil {
+		fmt.Printf("   ⚠️  Warning: failed to handle cookie consent: %v\n", err)
+	} else if clicked {
+		fmt.Println("   ✅ Cookie consent accepted")
+		// Wait a moment for the dialog to close
+		time.Sleep(1 * time.Second)
+	} else {
+		fmt.Println("   No cookie consent dialog detected")
+	}
+
+	// Wait a bit more for gameplay to start
 	fmt.Println("⏳ Waiting for gameplay...")
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	fmt.Println("📸 Capturing final screenshot...")
 	// Capture final screenshot
