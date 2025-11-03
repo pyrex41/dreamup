@@ -366,6 +366,312 @@
             color: #1e8449;
             margin-bottom: 1rem;
         }
+
+        /* Task 6: Console Log Viewer Styles */
+        .console-log-viewer {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        /* Log Filters */
+        .log-filters {
+            margin-bottom: 1.5rem;
+        }
+
+        .log-filters h4 {
+            margin: 0 0 0.75rem 0;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            color: #6c757d;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 2px solid #dee2e6;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            border-color: #adb5bd;
+        }
+
+        .filter-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+        .filter-btn.filter-error.active {
+            background: #dc3545;
+            border-color: #dc3545;
+        }
+
+        .filter-btn.filter-warning.active {
+            background: #ffc107;
+            border-color: #ffc107;
+            color: #212529;
+        }
+
+        .filter-btn.filter-info.active {
+            background: #17a2b8;
+            border-color: #17a2b8;
+        }
+
+        .filter-btn.filter-debug.active {
+            background: #6c757d;
+            border-color: #6c757d;
+        }
+
+        .filter-btn.filter-log.active {
+            background: #28a745;
+            border-color: #28a745;
+        }
+
+        /* Log Search */
+        .log-search {
+            margin-bottom: 1.5rem;
+        }
+
+        .log-search h4 {
+            margin: 0 0 0.75rem 0;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            color: #6c757d;
+        }
+
+        .search-input {
+            width: 100%;
+            max-width: 600px;
+            padding: 0.75rem 1rem;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 0.875rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        /* Export Controls */
+        .log-export-controls {
+            margin-bottom: 1.5rem;
+        }
+
+        .log-export-controls h4 {
+            margin: 0 0 0.75rem 0;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            color: #6c757d;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .export-btn {
+            padding: 0.5rem 1rem;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .export-btn:hover {
+            background: #218838;
+        }
+
+        /* Log Display Info */
+        .log-display-info {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: white;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            color: #6c757d;
+        }
+
+        /* Console Logs Container */
+        .console-logs-container {
+            background: white;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        /* Enhanced Console Log */
+        .console-log-enhanced {
+            border-bottom: 1px solid #dee2e6;
+            transition: background 0.2s;
+        }
+
+        .console-log-enhanced:last-child {
+            border-bottom: none;
+        }
+
+        .console-log-enhanced:hover {
+            background: #f8f9fa;
+        }
+
+        .console-log-enhanced.expanded {
+            background: #f8f9fa;
+        }
+
+        .log-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+        }
+
+        .log-timestamp {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.75rem;
+            color: #6c757d;
+            min-width: 80px;
+        }
+
+        .log-level-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            min-width: 70px;
+            text-align: center;
+        }
+
+        .log-level-badge.level-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .log-level-badge.level-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .log-level-badge.level-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .log-level-badge.level-debug {
+            background: #d6d8db;
+            color: #1b1e21;
+        }
+
+        .log-level-badge.level-log {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .log-message-preview {
+            flex: 1;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.875rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .log-expand-icon {
+            color: #6c757d;
+            font-size: 0.75rem;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        /* Log Details */
+        .log-details {
+            padding: 1rem;
+            background: white;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .log-detail-row {
+            margin-bottom: 0.75rem;
+        }
+
+        .log-detail-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .log-detail-label {
+            display: inline-block;
+            font-weight: 600;
+            min-width: 80px;
+            color: #495057;
+            font-size: 0.875rem;
+        }
+
+        .log-detail-value {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.875rem;
+            color: #212529;
+            word-break: break-word;
+        }
+
+        .log-detail-value.log-source {
+            color: #6c757d;
+            font-size: 0.8125rem;
+        }
+
+        /* Virtual Scroll Controls */
+        .virtual-scroll-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 6px;
+        }
+
+        .scroll-btn {
+            padding: 0.5rem 1rem;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+        }
+
+        .scroll-btn:hover:not(:disabled) {
+            background: #0056b3;
+        }
+
+        .scroll-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        .scroll-info {
+            font-size: 0.875rem;
+            color: #6c757d;
+            font-weight: 500;
+        }
     </style>
 </head>
 <body>

@@ -43,6 +43,7 @@ type alias Model =
     , reportError : Maybe String
     , expandedSections : ExpandedSections
     , screenshotViewer : ScreenshotViewerState
+    , consoleLogViewer : ConsoleLogViewerState
     }
 
 
@@ -74,6 +75,24 @@ type ZoomLevel
     = FitToScreen
     | Zoom100
     | Zoom200
+
+
+type alias ConsoleLogViewerState =
+    { searchQuery : String
+    , levelFilters : LevelFilters
+    , expandedLogs : List Int
+    , virtualScrollOffset : Int
+    , virtualScrollLimit : Int
+    }
+
+
+type alias LevelFilters =
+    { showError : Bool
+    , showWarning : Bool
+    , showInfo : Bool
+    , showDebug : Bool
+    , showLog : Bool
+    }
 
 
 type alias TestForm =
@@ -197,6 +216,7 @@ init flags url key =
       , reportError = Nothing
       , expandedSections = initExpandedSections
       , screenshotViewer = initScreenshotViewer
+      , consoleLogViewer = initConsoleLogViewer
       }
     , cmd
     )
@@ -219,6 +239,26 @@ initScreenshotViewer =
     , isFullScreen = False
     , overlayOpacity = 50
     , loadedImages = []
+    }
+
+
+initConsoleLogViewer : ConsoleLogViewerState
+initConsoleLogViewer =
+    { searchQuery = ""
+    , levelFilters = initLevelFilters
+    , expandedLogs = []
+    , virtualScrollOffset = 0
+    , virtualScrollLimit = 100
+    }
+
+
+initLevelFilters : LevelFilters
+initLevelFilters =
+    { showError = True
+    , showWarning = True
+    , showInfo = True
+    , showDebug = True
+    , showLog = True
     }
 
 
@@ -282,6 +322,11 @@ type Msg
     | ImageLoaded Int
     | PreviousScreenshot
     | NextScreenshot
+    | UpdateLogSearch String
+    | ToggleLevelFilter String
+    | ToggleLogExpanded Int
+    | ScrollLogs Int
+    | ExportLogs String
 
 
 type SectionType
@@ -605,6 +650,80 @@ update msg model =
 
                 Nothing ->
                     ( model, Cmd.none )
+
+        UpdateLogSearch query ->
+            let
+                logViewer =
+                    model.consoleLogViewer
+
+                updatedViewer =
+                    { logViewer | searchQuery = query }
+            in
+            ( { model | consoleLogViewer = updatedViewer }, Cmd.none )
+
+        ToggleLevelFilter level ->
+            let
+                logViewer =
+                    model.consoleLogViewer
+
+                filters =
+                    logViewer.levelFilters
+
+                updatedFilters =
+                    case level of
+                        "error" ->
+                            { filters | showError = not filters.showError }
+
+                        "warning" ->
+                            { filters | showWarning = not filters.showWarning }
+
+                        "info" ->
+                            { filters | showInfo = not filters.showInfo }
+
+                        "debug" ->
+                            { filters | showDebug = not filters.showDebug }
+
+                        "log" ->
+                            { filters | showLog = not filters.showLog }
+
+                        _ ->
+                            filters
+
+                updatedViewer =
+                    { logViewer | levelFilters = updatedFilters }
+            in
+            ( { model | consoleLogViewer = updatedViewer }, Cmd.none )
+
+        ToggleLogExpanded index ->
+            let
+                logViewer =
+                    model.consoleLogViewer
+
+                updatedExpanded =
+                    if List.member index logViewer.expandedLogs then
+                        List.filter (\i -> i /= index) logViewer.expandedLogs
+
+                    else
+                        index :: logViewer.expandedLogs
+
+                updatedViewer =
+                    { logViewer | expandedLogs = updatedExpanded }
+            in
+            ( { model | consoleLogViewer = updatedViewer }, Cmd.none )
+
+        ScrollLogs offset ->
+            let
+                logViewer =
+                    model.consoleLogViewer
+
+                updatedViewer =
+                    { logViewer | virtualScrollOffset = offset }
+            in
+            ( { model | consoleLogViewer = updatedViewer }, Cmd.none )
+
+        ExportLogs format ->
+            -- Export functionality will be implemented via ports or download
+            ( model, Cmd.none )
 
 
 -- VALIDATION
@@ -1311,6 +1430,7 @@ viewReasoning reasoning =
         [ p [] [ text reasoning ] ]
 
 
+{-| Task 6: Console Log Viewer with Filtering, Search, Virtual Scrolling, and Export -}
 viewConsoleLogs : Evidence -> Html Msg
 viewConsoleLogs evidence =
     div []
@@ -1330,6 +1450,186 @@ viewConsoleLogs evidence =
         ]
 
 
+{-| Enhanced Console Log Viewer with all Task 6 features -}
+viewConsoleLogViewer : Model -> Evidence -> Html Msg
+viewConsoleLogViewer model evidence =
+    let
+        viewer =
+            model.consoleLogViewer
+
+        -- Subtask 2: Filter and Search
+        filteredLogs =
+            evidence.consoleLogs
+                |> filterLogsByLevel viewer.levelFilters
+                |> filterLogsBySearch viewer.searchQuery
+
+        -- Subtask 3: Virtual Scrolling
+        visibleLogs =
+            filteredLogs
+                |> List.drop viewer.virtualScrollOffset
+                |> List.take viewer.virtualScrollLimit
+
+        totalFiltered =
+            List.length filteredLogs
+    in
+    div [ class "console-log-viewer" ]
+        [ -- Subtask 2: Filter Controls
+          viewLogFilters viewer.levelFilters evidence.logSummary
+        , -- Subtask 2: Search Bar
+          viewLogSearch viewer.searchQuery
+        , -- Subtask 4: Export Button
+          viewLogExportControls
+        , -- Display Summary
+          div [ class "log-display-info" ]
+            [ text ("Showing " ++ String.fromInt (List.length visibleLogs) ++ " of " ++ String.fromInt totalFiltered ++ " logs")
+            ]
+        , -- Subtask 1 & 3: Log Display with Virtual Scrolling
+          if List.isEmpty filteredLogs then
+            div [ class "empty-state" ] [ text "No logs match current filters." ]
+
+          else
+            div [ class "console-logs-container" ]
+                (visibleLogs
+                    |> List.indexedMap (\idx log -> viewConsoleLogEnhanced (idx + viewer.virtualScrollOffset) log viewer.expandedLogs)
+                )
+        , -- Virtual Scroll Controls
+          if totalFiltered > viewer.virtualScrollLimit then
+            viewVirtualScrollControls viewer.virtualScrollOffset totalFiltered viewer.virtualScrollLimit
+
+          else
+            text ""
+        ]
+
+
+{-| Subtask 2: Level Filters -}
+viewLogFilters : LevelFilters -> LogSummary -> Html Msg
+viewLogFilters filters summary =
+    div [ class "log-filters" ]
+        [ h4 [] [ text "Filter by Level" ]
+        , div [ class "filter-buttons" ]
+            [ viewFilterButton "error" filters.showError summary.errors
+            , viewFilterButton "warning" filters.showWarning summary.warnings
+            , viewFilterButton "info" filters.showInfo summary.info
+            , viewFilterButton "debug" filters.showDebug summary.debug
+            , viewFilterButton "log" filters.showLog (summary.total - summary.errors - summary.warnings - summary.info - summary.debug)
+            ]
+        ]
+
+
+viewFilterButton : String -> Bool -> Int -> Html Msg
+viewFilterButton level isActive count =
+    button
+        [ class ("filter-btn filter-" ++ level ++ (if isActive then " active" else ""))
+        , onClick (ToggleLevelFilter level)
+        ]
+        [ text (String.toUpper level ++ " (" ++ String.fromInt count ++ ")") ]
+
+
+{-| Subtask 2: Search Bar -}
+viewLogSearch : String -> Html Msg
+viewLogSearch query =
+    div [ class "log-search" ]
+        [ h4 [] [ text "Search Logs" ]
+        , input
+            [ type_ "text"
+            , placeholder "Search messages, sources..."
+            , value query
+            , onInput UpdateLogSearch
+            , class "search-input"
+            ]
+            []
+        ]
+
+
+{-| Subtask 4: Export Controls -}
+viewLogExportControls : Html Msg
+viewLogExportControls =
+    div [ class "log-export-controls" ]
+        [ h4 [] [ text "Export" ]
+        , div [ class "export-buttons" ]
+            [ button
+                [ class "export-btn"
+                , onClick (ExportLogs "json")
+                ]
+                [ text "📥 Export as JSON" ]
+            , button
+                [ class "export-btn"
+                , onClick (ExportLogs "text")
+                ]
+                [ text "📄 Export as Text" ]
+            ]
+        ]
+
+
+{-| Subtask 1: Enhanced Log Display with Timestamps and Expandable Details -}
+viewConsoleLogEnhanced : Int -> ConsoleLog -> List Int -> Html Msg
+viewConsoleLogEnhanced index log expandedLogs =
+    let
+        isExpanded =
+            List.member index expandedLogs
+
+        levelBadgeClass =
+            "log-level-badge level-" ++ log.level
+    in
+    div [ class ("console-log-enhanced log-" ++ log.level ++ (if isExpanded then " expanded" else "")) ]
+        [ div [ class "log-header", onClick (ToggleLogExpanded index) ]
+            [ span [ class "log-timestamp" ] [ text log.timestamp ]
+            , span [ class levelBadgeClass ] [ text (String.toUpper log.level) ]
+            , span [ class "log-message-preview" ] [ text (truncateMessage log.message 100) ]
+            , span [ class "log-expand-icon" ] [ text (if isExpanded then "▼" else "▶") ]
+            ]
+        , if isExpanded then
+            div [ class "log-details" ]
+                [ div [ class "log-detail-row" ]
+                    [ span [ class "log-detail-label" ] [ text "Message:" ]
+                    , span [ class "log-detail-value" ] [ text log.message ]
+                    ]
+                , div [ class "log-detail-row" ]
+                    [ span [ class "log-detail-label" ] [ text "Source:" ]
+                    , span [ class "log-detail-value log-source" ] [ text log.source ]
+                    ]
+                ]
+
+          else
+            text ""
+        ]
+
+
+{-| Subtask 3: Virtual Scroll Controls -}
+viewVirtualScrollControls : Int -> Int -> Int -> Html Msg
+viewVirtualScrollControls offset total limit =
+    let
+        canScrollUp =
+            offset > 0
+
+        canScrollDown =
+            offset + limit < total
+
+        currentPage =
+            (offset // limit) + 1
+
+        totalPages =
+            ceiling (toFloat total / toFloat limit)
+    in
+    div [ class "virtual-scroll-controls" ]
+        [ button
+            [ class "scroll-btn"
+            , onClick (ScrollLogs (Basics.max 0 (offset - limit)))
+            , disabled (not canScrollUp)
+            ]
+            [ text "◀ Previous" ]
+        , span [ class "scroll-info" ]
+            [ text ("Page " ++ String.fromInt currentPage ++ " of " ++ String.fromInt totalPages) ]
+        , button
+            [ class "scroll-btn"
+            , onClick (ScrollLogs (offset + limit))
+            , disabled (not canScrollDown)
+            ]
+            [ text "Next ▶" ]
+        ]
+
+
+{-| Legacy console log view (simple) -}
 viewConsoleLog : ConsoleLog -> Html Msg
 viewConsoleLog log =
     div [ class ("console-log log-" ++ log.level) ]
@@ -1337,6 +1637,62 @@ viewConsoleLog log =
         , span [ class "log-message" ] [ text log.message ]
         , span [ class "log-source" ] [ text log.source ]
         ]
+
+
+{-| Helper: Filter logs by level -}
+filterLogsByLevel : LevelFilters -> List ConsoleLog -> List ConsoleLog
+filterLogsByLevel filters logs =
+    logs
+        |> List.filter
+            (\log ->
+                case log.level of
+                    "error" ->
+                        filters.showError
+
+                    "warning" ->
+                        filters.showWarning
+
+                    "info" ->
+                        filters.showInfo
+
+                    "debug" ->
+                        filters.showDebug
+
+                    "log" ->
+                        filters.showLog
+
+                    _ ->
+                        True
+            )
+
+
+{-| Helper: Filter logs by search query -}
+filterLogsBySearch : String -> List ConsoleLog -> List ConsoleLog
+filterLogsBySearch query logs =
+    if String.isEmpty query then
+        logs
+
+    else
+        let
+            lowerQuery =
+                String.toLower query
+        in
+        logs
+            |> List.filter
+                (\log ->
+                    String.contains lowerQuery (String.toLower log.message)
+                        || String.contains lowerQuery (String.toLower log.source)
+                )
+
+
+{-| Helper: Truncate message for preview -}
+truncateMessage : String -> Int -> String
+truncateMessage message maxLength =
+    if String.length message > maxLength then
+        String.left maxLength message ++ "..."
+
+    else
+        message
 
 
 {-| Subtask 4: Report Actions -}
