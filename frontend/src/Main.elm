@@ -37,6 +37,7 @@ type alias Model =
     , route : Route
     , apiBaseUrl : String
     , testForm : TestForm
+    , testStatus : Maybe TestStatus
     }
 
 
@@ -50,10 +51,20 @@ type alias TestForm =
     }
 
 
+type alias TestStatus =
+    { testId : String
+    , status : String
+    , phase : String
+    , progress : Int
+    , elapsedTime : Int
+    , error : Maybe String
+    }
+
+
 type Route
     = Home
     | TestSubmission
-    | TestStatus String
+    | TestStatusPage String
     | ReportView String
     | TestHistory
     | NotFound
@@ -66,6 +77,7 @@ init flags url key =
       , route = parseUrl url
       , apiBaseUrl = "http://localhost:8080/api"  -- Update with actual API URL
       , testForm = initTestForm
+      , testStatus = Nothing
       }
     , Cmd.none
     )
@@ -90,7 +102,7 @@ routeParser =
     Parser.oneOf
         [ Parser.map Home Parser.top
         , Parser.map TestSubmission (Parser.s "submit")
-        , Parser.map TestStatus (Parser.s "test" </> string)
+        , Parser.map TestStatusPage (Parser.s "test" </> string)
         , Parser.map ReportView (Parser.s "report" </> string)
         , Parser.map TestHistory (Parser.s "history")
         ]
@@ -114,6 +126,9 @@ type Msg
     | ToggleHeadless
     | SubmitTest
     | TestSubmitted (Result Http.Error TestSubmitResponse)
+    | PollStatus String
+    | StatusUpdated (Result Http.Error TestStatus)
+    | Tick Time.Posix
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -204,6 +219,25 @@ update msg model =
                     , Cmd.none
                     )
 
+        PollStatus testId ->
+            ( model, pollTestStatus model.apiBaseUrl testId )
+
+        StatusUpdated result ->
+            case result of
+                Ok status ->
+                    ( { model | testStatus = Just status }, Cmd.none )
+
+                Err _ ->
+                    ( model, Cmd.none )
+
+        Tick _ ->
+            case model.route of
+                TestStatusPage testId ->
+                    ( model, pollTestStatus model.apiBaseUrl testId )
+
+                _ ->
+                    ( model, Cmd.none )
+
 
 -- VALIDATION
 
@@ -254,6 +288,25 @@ testSubmitResponseDecoder =
     Decode.map2 TestSubmitResponse
         (Decode.field "testId" Decode.string)
         (Decode.field "estimatedCompletionTime" Decode.int)
+
+
+pollTestStatus : String -> String -> Cmd Msg
+pollTestStatus apiBaseUrl testId =
+    getWithCors
+        (apiBaseUrl ++ "/tests/" ++ testId)
+        testStatusDecoder
+        StatusUpdated
+
+
+testStatusDecoder : Decode.Decoder TestStatus
+testStatusDecoder =
+    Decode.map6 TestStatus
+        (Decode.field "testId" Decode.string)
+        (Decode.field "status" Decode.string)
+        (Decode.field "phase" Decode.string)
+        (Decode.field "progress" Decode.int)
+        (Decode.field "elapsedTime" Decode.int)
+        (Decode.maybe (Decode.field "error" Decode.string))
 
 
 httpErrorToString : Http.Error -> String
@@ -323,7 +376,12 @@ postWithCors url body decoder toMsg =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    Sub.none
+    case model.route of
+        TestStatusPage _ ->
+            Time.every 3000 Tick
+
+        _ ->
+            Sub.none
 
 
 -- VIEW
@@ -364,8 +422,8 @@ viewContent model =
             TestSubmission ->
                 viewTestSubmission model
 
-            TestStatus testId ->
-                viewTestStatus testId
+            TestStatusPage testId ->
+                viewTestStatus model testId
 
             ReportView reportId ->
                 viewReportView reportId
@@ -473,12 +531,103 @@ viewTestSubmission model =
         ]
 
 
-viewTestStatus : String -> Html Msg
-viewTestStatus testId =
+viewTestStatus : Model -> String -> Html Msg
+viewTestStatus model testId =
     div [ class "page test-status" ]
-        [ h2 [] [ text ("Test Status: " ++ testId) ]
-        , p [] [ text "Test status tracking will be implemented here." ]
+        [ h2 [] [ text "Test Execution Status" ]
+        , case model.testStatus of
+            Just status ->
+                viewStatusDetails status
+
+            Nothing ->
+                div [ class "loading" ]
+                    [ div [ class "spinner" ] []
+                    , p [] [ text "Loading test status..." ]
+                    ]
         ]
+
+
+viewStatusDetails : TestStatus -> Html Msg
+viewStatusDetails status =
+    div [ class "status-details" ]
+        [ div [ class "status-header" ]
+            [ div [ class "status-badge", class (statusClass status.status) ]
+                [ text (String.toUpper status.status) ]
+            , p [ class "test-id" ] [ text ("Test ID: " ++ status.testId) ]
+            ]
+        , div [ class "status-info" ]
+            [ div [ class "info-item" ]
+                [ span [ class "label" ] [ text "Phase:" ]
+                , span [ class "value" ] [ text status.phase ]
+                ]
+            , div [ class "info-item" ]
+                [ span [ class "label" ] [ text "Elapsed Time:" ]
+                , span [ class "value" ] [ text (formatTime status.elapsedTime) ]
+                ]
+            ]
+        , div [ class "progress-section" ]
+            [ div [ class "progress-label" ]
+                [ text ("Progress: " ++ String.fromInt status.progress ++ "%") ]
+            , div [ class "progress-bar-container" ]
+                [ div
+                    [ class "progress-bar-fill"
+                    , style "width" (String.fromInt status.progress ++ "%")
+                    ]
+                    []
+                ]
+            ]
+        , case status.error of
+            Just error ->
+                div [ class "error" ] [ text ("Error: " ++ error) ]
+
+            Nothing ->
+                text ""
+        , if status.status == "completed" then
+            div [ class "actions" ]
+                [ a [ href ("/report/" ++ status.testId), class "button primary" ]
+                    [ text "View Report" ]
+                , a [ href "/", class "button secondary" ] [ text "Back to Home" ]
+                ]
+
+          else if status.status == "failed" then
+            div [ class "actions" ]
+                [ a [ href "/", class "button secondary" ] [ text "Back to Home" ]
+                , a [ href "/submit", class "button primary" ] [ text "Try Again" ]
+                ]
+
+          else
+            div [ class "status-message" ]
+                [ p [] [ text "Test is running... This page will update automatically." ]
+                ]
+        ]
+
+
+statusClass : String -> String
+statusClass status =
+    case status of
+        "completed" ->
+            "status-success"
+
+        "failed" ->
+            "status-error"
+
+        "running" ->
+            "status-running"
+
+        _ ->
+            "status-pending"
+
+
+formatTime : Int -> String
+formatTime seconds =
+    let
+        mins =
+            seconds // 60
+
+        secs =
+            modBy 60 seconds
+    in
+    String.fromInt mins ++ "m " ++ String.fromInt secs ++ "s"
 
 
 viewReportView : String -> Html Msg
