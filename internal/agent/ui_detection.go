@@ -264,6 +264,53 @@ func (d *UIDetector) FindBestStartButton() (string, error) {
 	return element.Selector, nil
 }
 
+// ClickStartButton attempts to find and click a start/play button
+// Returns true if a button was found and clicked, false otherwise
+func (d *UIDetector) ClickStartButton() (bool, error) {
+	// Use JavaScript to find and click start/play buttons
+	script := `
+(function() {
+	// Try finding buttons by text content
+	const buttons = document.querySelectorAll('button, a[role="button"], div[role="button"], a, span[role="button"], input[type="button"], input[type="submit"]');
+	for (const btn of buttons) {
+		const text = btn.textContent.toLowerCase().trim();
+		const value = (btn.value || '').toLowerCase().trim();
+		// Match common start/play button text
+		if (text === 'play' || text === 'start' || text === 'begin' ||
+		    text === 'play game' || text === 'start game' ||
+		    text.includes('play now') || text.includes('start now') ||
+		    value === 'play' || value === 'start') {
+			// Check if button is visible
+			if (btn.offsetParent !== null) {
+				btn.click();
+				return true;
+			}
+		}
+	}
+
+	// Try clicking canvas (many games start on canvas click)
+	const canvas = document.querySelector('canvas');
+	if (canvas && canvas.offsetParent !== null) {
+		canvas.click();
+		return true;
+	}
+
+	return false;
+})();
+`
+
+	var clicked bool
+	err := chromedp.Run(d.ctx,
+		chromedp.Evaluate(script, &clicked),
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to run start button script: %w", err)
+	}
+
+	return clicked, nil
+}
+
 // HasGameCanvas checks if a game canvas is present
 func (d *UIDetector) HasGameCanvas() bool {
 	_, err := d.DetectPattern(GameCanvasPattern)

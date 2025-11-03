@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/dreamup/qa-agent/internal/agent"
 	"github.com/dreamup/qa-agent/internal/evaluator"
 	"github.com/dreamup/qa-agent/internal/reporter"
@@ -108,9 +109,43 @@ func runTest(cmd *cobra.Command, args []string) error {
 		fmt.Println("   No cookie consent dialog detected")
 	}
 
-	// Wait a bit more for gameplay to start
+	// Try to find and click the start/play button
+	fmt.Println("🎮 Looking for start button...")
+	if clicked, err := detector.ClickStartButton(); err != nil {
+		fmt.Printf("   ⚠️  Warning: failed to check for start button: %v\n", err)
+	} else if clicked {
+		fmt.Println("   ✅ Game started!")
+		time.Sleep(1 * time.Second) // Wait for game to initialize
+	} else {
+		fmt.Println("   No start button detected, game may auto-start")
+	}
+
+	// Wait a bit for gameplay
 	fmt.Println("⏳ Waiting for gameplay...")
 	time.Sleep(3 * time.Second)
+
+	// Simulate some gameplay interactions
+	fmt.Println("🕹️  Simulating gameplay...")
+	gameplayActions := []struct {
+		key  string
+		desc string
+	}{
+		{"ArrowUp", "up"},
+		{"ArrowDown", "down"},
+		{"Space", "space"},
+		{"ArrowLeft", "left"},
+		{"ArrowRight", "right"},
+	}
+
+	for _, action := range gameplayActions {
+		chromedp.Run(bm.GetContext(),
+			chromedp.KeyEvent(action.key),
+		)
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	fmt.Println("   Game interactions completed")
+	time.Sleep(1 * time.Second)
 
 	fmt.Println("📸 Capturing final screenshot...")
 	// Capture final screenshot
