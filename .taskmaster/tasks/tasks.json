@@ -699,14 +699,14 @@
   "elm": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Set up Elm Project Structure and Dependencies",
         "description": "Initialize the Elm project with required dependencies and basic application structure using Elm 0.19.1, Vite or webpack, and specified packages like elm/http, elm/json, etc.",
         "details": "Create a new Elm project using elm init. Install dependencies: elm/core, elm/html, elm/http, elm/json, elm/browser, elm/url, elm/time, justinmimbs/time-extra, elm-community/list-extra. Set up build tool (Vite with elm-vite plugin or webpack with elm-loader). Define the basic Elm Architecture with Model, Msg, and update/view functions. Implement routing using elm/browser with Browser.application. Include CORS handling for API requests.",
         "testStrategy": "Verify project compiles without errors. Check that all dependencies are installed and importable. Run elm make to ensure no compilation issues. Test basic app initialization in browser.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -715,7 +715,8 @@
             "dependencies": [],
             "details": "Run elm init in the project directory to create the basic Elm project structure. Then, use elm install to add the following packages: elm/core, elm/html, elm/http, elm/json, elm/browser, elm/url, elm/time, justinmimbs/time-extra, and elm-community/list-extra. Ensure all packages are installed without conflicts and verify the elm.json file is updated correctly.",
             "status": "pending",
-            "testStrategy": "Verify that elm init creates the expected files and directories. Check that all specified packages are listed in elm.json after installation. Run elm make to confirm no compilation errors due to missing dependencies."
+            "testStrategy": "Verify that elm init creates the expected files and directories. Check that all specified packages are listed in elm.json after installation. Run elm make to confirm no compilation errors due to missing dependencies.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -726,7 +727,8 @@
             ],
             "details": "Choose between Vite or webpack based on project needs. For Vite, install vite and elm-vite-plugin via npm, then configure vite.config.js to handle Elm files. For webpack, install webpack, elm-webpack-loader, and set up webpack.config.js accordingly. Ensure the build tool can compile Elm code, handle hot reloading, and output a bundled JavaScript file for the browser.",
             "status": "pending",
-            "testStrategy": "Run the build command (e.g., npm run build) and verify that the Elm code compiles without errors. Check that the output bundle is generated and can be served in a browser. Test hot reloading by making a small change to Elm code and confirming automatic recompilation."
+            "testStrategy": "Run the build command (e.g., npm run build) and verify that the Elm code compiles without errors. Check that the output bundle is generated and can be served in a browser. Test hot reloading by making a small change to Elm code and confirming automatic recompilation.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -737,19 +739,24 @@
             ],
             "details": "Create the main Elm file with a Model type alias, Msg union type, update function to handle messages, and view function to render the UI. Use Browser.application for routing, defining init, update, view, and subscriptions. For CORS handling, configure HTTP requests in the update function to include necessary headers or use proxies if needed. Ensure the application initializes correctly and can handle basic navigation and API calls.",
             "status": "pending",
-            "testStrategy": "Compile the Elm application and verify it runs in the browser without errors. Test basic routing by navigating between pages. Simulate API requests and check that CORS issues are handled gracefully, perhaps by verifying requests succeed in a development environment."
+            "testStrategy": "Compile the Elm application and verify it runs in the browser without errors. Test basic routing by navigating between pages. Simulate API requests and check that CORS issues are handled gracefully, perhaps by verifying requests succeed in a development environment.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks are already well-defined covering initialization, build tool setup, and basic architecture implementation.",
+        "updatedAt": "2025-11-03T21:34:18.463Z"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Implement Test Submission Interface",
         "description": "Build the form for submitting a game URL to initiate a test, including validation and optional settings.",
         "details": "Create a form with a single URL input field using elm/html. Add client-side validation for HTTP/HTTPS URLs using elm/url. Include optional advanced settings: timeout slider (60-300s, default 280), metadata key-value pairs, S3 upload toggle. Use elm/http to send POST request to /api/tests with JSON payload. Handle loading state on submit button. Display estimated completion time after submission. Pseudo-code: type Msg = SubmitTest String; update msg model = case msg of SubmitTest url -> (model, Http.post { url = '/api/tests', body = encodeTestRequest url, expect = expectJson TestResponse decoder })",
         "testStrategy": "Test URL validation with valid/invalid inputs. Verify form submission sends correct JSON to API. Check loading state and error handling for invalid URLs or network failures. Use Elm debugger to inspect model updates.",
         "priority": "high",
         "dependencies": [
-          1
+          "1"
         ],
         "status": "pending",
         "subtasks": [
@@ -760,7 +767,8 @@
             "dependencies": [],
             "details": "Use elm/html to create a form element containing a single input field for the game URL. Add optional sections for advanced settings: a slider for timeout (60-300s, default 280), input fields for metadata key-value pairs, and a toggle for S3 upload. Ensure the form is responsive and user-friendly.",
             "status": "pending",
-            "testStrategy": "Verify the form renders correctly with all fields visible and interactive. Test slider functionality and toggle states."
+            "testStrategy": "Verify the form renders correctly with all fields visible and interactive. Test slider functionality and toggle states.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -771,7 +779,8 @@
             ],
             "details": "Integrate elm/url to validate the entered URL on input change or form submission. Display error messages for invalid URLs. Ensure validation prevents submission if the URL is invalid. Include checks for required fields and optional settings constraints.",
             "status": "pending",
-            "testStrategy": "Test with various valid and invalid URLs (e.g., http, https, invalid formats). Verify error messages appear and submission is blocked for invalid inputs."
+            "testStrategy": "Test with various valid and invalid URLs (e.g., http, https, invalid formats). Verify error messages appear and submission is blocked for invalid inputs.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -783,19 +792,23 @@
             ],
             "details": "On form submission, encode the URL and optional settings into a JSON payload and send via elm/http POST to /api/tests. Update the submit button to show loading state. After successful submission, display an estimated completion time. Handle errors from the API response.",
             "status": "pending",
-            "testStrategy": "Mock API responses to test successful submission, loading states, and error handling. Verify JSON payload structure and that estimated time is displayed post-submission."
+            "testStrategy": "Mock API responses to test successful submission, loading states, and error handling. Verify JSON payload structure and that estimated time is displayed post-submission.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks cover form UI, validation, and submission logic comprehensively."
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Add Test Execution Status Tracking",
         "description": "Implement real-time feedback for test execution, including status indicators and progress updates.",
         "details": "Add status phases (Initializing, Loading game, etc.) with progress bar and elapsed time counter. Use polling (every 2-3 seconds) via GET /api/tests/{test_id} or WebSocket if available. Store test state in localStorage for resilience. Include cancel button if feasible. Pseudo-code: type alias Model = { testId : Maybe String, status : String, progress : Int }; update msg model = case msg of PollStatus -> (model, Http.get { url = '/api/tests/' ++ model.testId, expect = expectJson StatusUpdate decoder })",
         "testStrategy": "Simulate test execution by mocking API responses. Verify status updates in UI (spinner, progress bar). Test localStorage persistence on page refresh. Check polling interval and error handling for failed requests.",
         "priority": "high",
         "dependencies": [
-          2
+          "2"
         ],
         "status": "pending",
         "subtasks": [
@@ -806,7 +819,8 @@
             "dependencies": [],
             "details": "Use Elm's Http module to perform periodic GET requests to the API. Implement a timer or subscription to trigger polls. Decode the JSON response into a status update model. Ensure the polling stops when the test completes or is cancelled.",
             "status": "pending",
-            "testStrategy": "Mock API responses with different statuses and verify polling intervals. Test WebSocket fallback if implemented."
+            "testStrategy": "Mock API responses with different statuses and verify polling intervals. Test WebSocket fallback if implemented.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -815,7 +829,8 @@
             "dependencies": [],
             "details": "Create Elm views for status phases like 'Initializing' and 'Loading game'. Implement a progress bar using HTML progress element or custom CSS. Add an elapsed time counter that updates in real-time. Include a cancel button that sends a cancellation request if feasible.",
             "status": "pending",
-            "testStrategy": "Simulate test execution states and verify UI updates correctly, including progress bar animation and time counter accuracy."
+            "testStrategy": "Simulate test execution states and verify UI updates correctly, including progress bar animation and time counter accuracy.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -824,7 +839,8 @@
             "dependencies": [],
             "details": "Use Elm's ports or Browser.LocalStorage to save and retrieve the model state. On page load, check localStorage for existing test state and restore it. Update localStorage whenever the status or progress changes. Handle serialization of the model to JSON.",
             "status": "pending",
-            "testStrategy": "Test persistence by refreshing the page during a simulated test and verify state restoration. Check localStorage contents for correct data."
+            "testStrategy": "Test persistence by refreshing the page during a simulated test and verify state restoration. Check localStorage contents for correct data.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -833,19 +849,23 @@
             "dependencies": [],
             "details": "Handle Http errors in the update function, displaying user-friendly error messages. Implement retry logic for transient failures. Log errors for debugging. Ensure the polling continues or gracefully stops on critical errors. Provide fallback UI states for errors.",
             "status": "pending",
-            "testStrategy": "Simulate network failures and invalid responses. Verify error messages display correctly and retry mechanisms work as expected."
+            "testStrategy": "Simulate network failures and invalid responses. Verify error messages display correctly and retry mechanisms work as expected.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks address polling, UI indicators, persistence, and error handling."
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Implement Report Display",
         "description": "Create the comprehensive view for displaying test reports, including summary, metrics, issues, and actions.",
         "details": "Build report view with header (status badge, score, duration, etc.), evaluation metrics (progress bars for scores), collapsible issues/recommendations, AI reasoning section. Use elm/json for decoding Report type. Include actions: share link, download JSON, re-run. Color-code scores (red/yellow/green). Pseudo-code: viewReport report = div [] [ h1 [] [text report.summary.status], div [] [text (\"Score: \" ++ String.fromInt report.score.overallScore)] ]",
         "testStrategy": "Load sample report JSON and verify all fields render correctly. Test collapsible sections and color gradients. Check action buttons (copy to clipboard, download). Validate with different score ranges and statuses.",
         "priority": "high",
         "dependencies": [
-          3
+          "3"
         ],
         "status": "pending",
         "subtasks": [
@@ -856,7 +876,8 @@
             "dependencies": [],
             "details": "Build the header with Elm/HTML elements to show report status, overall score, duration, and any other summary fields from the Report type. Use color-coding for status badges and ensure responsive layout.",
             "status": "pending",
-            "testStrategy": "Verify header renders correctly with sample data, checking status badges and score display."
+            "testStrategy": "Verify header renders correctly with sample data, checking status badges and score display.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -865,7 +886,8 @@
             "dependencies": [],
             "details": "Use Elm/HTML to create progress bars for various scores in the report. Implement color-coding (red/yellow/green) based on score ranges. Ensure bars update dynamically with report data.",
             "status": "pending",
-            "testStrategy": "Test progress bars with different score values to confirm color gradients and accurate representation."
+            "testStrategy": "Test progress bars with different score values to confirm color gradients and accurate representation.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -874,7 +896,8 @@
             "dependencies": [],
             "details": "Create collapsible UI components using Elm/HTML for displaying issues, recommendations, and AI reasoning sections. Include toggle functionality and ensure content expands/collapses smoothly.",
             "status": "pending",
-            "testStrategy": "Load sample reports and test collapsing/expanding sections, verifying content visibility and performance."
+            "testStrategy": "Load sample reports and test collapsing/expanding sections, verifying content visibility and performance.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -883,7 +906,8 @@
             "dependencies": [],
             "details": "Implement buttons for share link (copy to clipboard), download JSON, and re-run actions using Elm/HTML and appropriate event handlers. Handle user interactions and provide feedback on actions.",
             "status": "pending",
-            "testStrategy": "Test each action button: verify clipboard copy, JSON download, and re-run initiation with mock data."
+            "testStrategy": "Test each action button: verify clipboard copy, JSON download, and re-run initiation with mock data.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -892,19 +916,23 @@
             "dependencies": [],
             "details": "Define the Report type and create JSON decoders using Elm/JSON to handle decoding of summary, metrics, issues, and other fields. Ensure robust error handling for malformed JSON.",
             "status": "pending",
-            "testStrategy": "Test decoding with valid and invalid JSON samples, confirming correct parsing and error handling."
+            "testStrategy": "Test decoding with valid and invalid JSON samples, confirming correct parsing and error handling.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks include header, metrics, collapsible sections, actions, and JSON decoding."
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Add Screenshot Viewer",
         "description": "Develop the visual comparison tool for screenshots with side-by-side, overlay, and difference modes.",
         "details": "Implement lazy loading of images from S3 URLs. Create side-by-side view, overlay with slider, and difference mode using canvas API. Add zoom controls (fit, 100%, 200%), full-screen mode, and download options. Display metadata (timestamp, resolution). Pseudo-code: viewScreenshots screenshots = div [] [ img [src screenshots.initial.s3Url] [], img [src screenshots.final.s3Url] [] ]",
         "testStrategy": "Test with sample images; verify lazy loading and modes switch correctly. Check zoom and full-screen functionality. Ensure metadata displays and downloads work. Test on different screen sizes.",
         "priority": "medium",
         "dependencies": [
-          4
+          "4"
         ],
         "status": "pending",
         "subtasks": [
@@ -915,7 +943,8 @@
             "dependencies": [],
             "details": "Use Elm's Http module to fetch images lazily when needed, implementing caching to avoid redundant requests. Handle loading states with placeholders or spinners. Ensure compatibility with S3 URLs and error handling for failed loads.",
             "status": "pending",
-            "testStrategy": "Test with various S3 URLs, verify images load only when viewed, check for no freezing on large images, and confirm error handling for invalid URLs."
+            "testStrategy": "Test with various S3 URLs, verify images load only when viewed, check for no freezing on large images, and confirm error handling for invalid URLs.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -926,7 +955,8 @@
             ],
             "details": "Implement side-by-side view with two images displayed adjacently. For overlay mode, use a canvas element with a slider to blend images. For difference mode, use canvas to compute and display pixel differences. Ensure smooth transitions between modes.",
             "status": "pending",
-            "testStrategy": "Test switching between modes with sample images, verify overlay slider adjusts opacity correctly, and check difference mode highlights changes accurately on different devices."
+            "testStrategy": "Test switching between modes with sample images, verify overlay slider adjusts opacity correctly, and check difference mode highlights changes accurately on different devices.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -937,7 +967,8 @@
             ],
             "details": "Add buttons or controls for zoom levels that scale the canvas or images appropriately. Implement full-screen mode using browser APIs. Include download options to save the current view as an image file.",
             "status": "pending",
-            "testStrategy": "Verify zoom controls adjust image size correctly, test full-screen mode on various screen sizes, and ensure download functionality saves the viewed image without distortion."
+            "testStrategy": "Verify zoom controls adjust image size correctly, test full-screen mode on various screen sizes, and ensure download functionality saves the viewed image without distortion.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -948,19 +979,23 @@
             ],
             "details": "Fetch and parse metadata from the screenshot data or API responses. Display it in a dedicated panel or overlay within the viewer. Ensure metadata updates when switching between initial and final screenshots.",
             "status": "pending",
-            "testStrategy": "Test with screenshots having different metadata, verify display accuracy, and check that metadata is visible in all view modes without overlapping content."
+            "testStrategy": "Test with screenshots having different metadata, verify display accuracy, and check that metadata is visible in all view modes without overlapping content.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 8,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks cover lazy loading, view modes, zoom/full-screen, and metadata display."
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Implement Console Log Viewer",
         "description": "Build a filterable and searchable viewer for browser console logs with summary statistics.",
         "details": "Display logs with timestamp, level badge, message, source. Add filters (level toggles, search with debouncing 300ms), summary stats (total, errors, warnings). Use virtual scrolling for performance. Export as JSON/text. Syntax highlight stack traces. Pseudo-code: viewLogs logs = ul [] (List.map viewLog logs); viewLog log = li [] [ span [] [text log.level], text log.message ]",
         "testStrategy": "Load large log dataset (10,000+ entries) and verify rendering without freezing. Test filters and search highlighting. Check export functionality and statistics accuracy. Validate syntax highlighting.",
         "priority": "medium",
         "dependencies": [
-          4
+          "4"
         ],
         "status": "pending",
         "subtasks": [
@@ -971,7 +1006,8 @@
             "dependencies": [],
             "details": "Use Elm's elm/html to render a list of log entries. Each log item should include a timestamp, a colored badge for log level (e.g., error in red, warning in yellow), the message text, and source information. Implement basic styling for readability and ensure the component can handle a list of log objects.",
             "status": "pending",
-            "testStrategy": "Render a sample list of logs and verify that all fields (timestamp, level, message, source) are displayed correctly with appropriate styling."
+            "testStrategy": "Render a sample list of logs and verify that all fields (timestamp, level, message, source) are displayed correctly with appropriate styling.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -980,7 +1016,8 @@
             "dependencies": [],
             "details": "Include toggle buttons for log levels (e.g., all, error, warning, info) to filter displayed logs. Add a search input field that filters logs based on message content with 300ms debouncing to avoid excessive re-renders. Update the displayed list dynamically based on active filters and search query.",
             "status": "pending",
-            "testStrategy": "Test toggling filters to ensure only matching logs are shown. Input search terms and verify debouncing prevents immediate updates, then check that results update after 300ms."
+            "testStrategy": "Test toggling filters to ensure only matching logs are shown. Input search terms and verify debouncing prevents immediate updates, then check that results update after 300ms.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -989,7 +1026,8 @@
             "dependencies": [],
             "details": "Use a virtual scrolling library or implement custom logic to render only visible log entries, calculating scroll position and rendering a subset of items. This should handle datasets with thousands of logs, improving performance by avoiding DOM overload. Ensure smooth scrolling and accurate positioning.",
             "status": "pending",
-            "testStrategy": "Load a dataset of 10,000+ logs and verify that the UI renders without freezing. Test scrolling through the list to ensure smooth performance and correct item visibility."
+            "testStrategy": "Load a dataset of 10,000+ logs and verify that the UI renders without freezing. Test scrolling through the list to ensure smooth performance and correct item visibility.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -998,19 +1036,23 @@
             "dependencies": [],
             "details": "Provide buttons or menu options to export the current filtered list of logs. For JSON export, serialize the log data. For text export, format logs with timestamps and messages. Implement syntax highlighting for stack traces in the display and possibly in exports. Handle file downloads using Elm's capabilities or browser APIs.",
             "status": "pending",
-            "testStrategy": "Apply filters, then export as JSON and text. Verify the exported files contain the correct data and that syntax highlighting is applied where relevant. Check file downloads work in the browser."
+            "testStrategy": "Apply filters, then export as JSON and text. Verify the exported files contain the correct data and that syntax highlighting is applied where relevant. Check file downloads work in the browser.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks handle display, filtering/search, virtual scrolling, and export."
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Add Test History and Search",
         "description": "Create a paginated list of historical tests with sorting, filtering, and navigation to reports.",
         "details": "Fetch reports via GET /api/reports with query params. Implement table with status, URL, score, etc. Add sorting (timestamp, score), filters (status, date range, URL search), pagination. Click rows to navigate to report view. Pseudo-code: type alias HistoryModel = { reports : List ReportSummary, page : Int }; update msg model = case msg of LoadHistory -> (model, Http.get { url = '/api/reports?page=' ++ String.fromInt model.page, expect = expectJson ReportsResponse decoder })",
         "testStrategy": "Mock API responses for multiple pages. Verify sorting and filtering work. Test pagination controls and row clicks navigate correctly. Check performance with large lists.",
         "priority": "medium",
         "dependencies": [
-          4
+          "4"
         ],
         "status": "pending",
         "subtasks": [
@@ -1021,7 +1063,8 @@
             "dependencies": [],
             "details": "Use Elm's Http module to create a function that constructs the URL with query parameters for pagination, sorting (e.g., by timestamp or score), and filtering (e.g., status, date range, URL search). Decode the JSON response into a list of ReportSummary and handle errors gracefully. Integrate this into the Elm Architecture update function to load data on page load or filter changes.",
             "status": "pending",
-            "testStrategy": "Mock API responses with various query parameters and verify that the correct data is fetched and decoded. Test error handling for network failures."
+            "testStrategy": "Mock API responses with various query parameters and verify that the correct data is fetched and decoded. Test error handling for network failures.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -1030,7 +1073,8 @@
             "dependencies": [],
             "details": "Use Elm's Html module to render a table with headers and rows. Each row should represent a ReportSummary, displaying fields like status badge, URL, score, and timestamp. Ensure the table is responsive and accessible. Implement row click handlers to navigate to the report view using Browser.Navigation.",
             "status": "pending",
-            "testStrategy": "Render the table with sample data and verify all columns display correctly. Test row clicks to ensure navigation to the report view works. Check responsiveness on different screen sizes."
+            "testStrategy": "Render the table with sample data and verify all columns display correctly. Test row clicks to ensure navigation to the report view works. Check responsiveness on different screen sizes.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -1039,7 +1083,8 @@
             "dependencies": [],
             "details": "Add dropdowns or buttons for sorting options (ascending/descending by timestamp or score). Include input fields for filters: a select for status, date pickers for range, and a text input for URL search. Update the model to store filter states and trigger API fetches when filters change. Use Elm's Time module for date handling if needed.",
             "status": "pending",
-            "testStrategy": "Apply various sorting and filtering combinations and verify the table updates correctly. Test with mock data to ensure filters reduce the list appropriately and sorting orders items as expected."
+            "testStrategy": "Apply various sorting and filtering combinations and verify the table updates correctly. Test with mock data to ensure filters reduce the list appropriately and sorting orders items as expected.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -1048,21 +1093,25 @@
             "dependencies": [],
             "details": "Create pagination controls including previous/next buttons, page number buttons, and a display of total pages. Update the model to track the current page and total items. On page change, trigger a new API fetch with the updated page parameter. Ensure the table only renders the current page's data to maintain performance.",
             "status": "pending",
-            "testStrategy": "Simulate multiple pages of data and test navigation between pages. Verify that the correct page data is displayed and that edge cases like first/last page are handled. Check performance with large datasets."
+            "testStrategy": "Simulate multiple pages of data and test navigation between pages. Verify that the correct page data is displayed and that edge cases like first/last page are handled. Check performance with large datasets.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks include API fetching, table component, sorting/filtering, and pagination."
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Polish UI/UX, Error Handling, and Deployment",
         "description": "Enhance styling, add accessibility, handle edge cases, and prepare for deployment as a static site.",
         "details": "Apply color palette, typography, and responsive layout (max 1280px, breakpoints). Ensure WCAG 2.1 AA compliance. Add error handling for network failures, retries with backoff. Implement offline indication and state persistence. Optimize performance (lazy loading, virtual scrolling). Deploy as static site to S3/CloudFront.",
         "testStrategy": "Conduct accessibility audit (color contrast, keyboard nav). Test cross-browser compatibility. Simulate network errors and verify graceful degradation. Measure load times (<2s initial, <3s report). Validate deployment and static hosting.",
         "priority": "low",
         "dependencies": [
-          5,
-          6,
-          7
+          "5",
+          "6",
+          "7"
         ],
         "status": "pending",
         "subtasks": [
@@ -1073,7 +1122,8 @@
             "dependencies": [],
             "details": "Implement CSS styles or Elm styling for the defined color scheme, font choices, and media queries to ensure the layout is fluid and user-friendly across devices, including mobile and desktop.",
             "status": "pending",
-            "testStrategy": "Test the UI on different screen sizes using browser developer tools and verify that layouts adjust correctly at breakpoints."
+            "testStrategy": "Test the UI on different screen sizes using browser developer tools and verify that layouts adjust correctly at breakpoints.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -1084,7 +1134,8 @@
             ],
             "details": "Conduct an accessibility audit using tools like WAVE or axe, then add necessary attributes and fixes such as alt text for images, focus indicators, and semantic HTML elements in the Elm views.",
             "status": "pending",
-            "testStrategy": "Perform an accessibility audit to check color contrast ratios, keyboard navigation, and screen reader compatibility across major browsers."
+            "testStrategy": "Perform an accessibility audit to check color contrast ratios, keyboard navigation, and screen reader compatibility across major browsers.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -1093,7 +1144,8 @@
             "dependencies": [],
             "details": "In Elm, use elm/http to handle HTTP errors, implement retry logic with backoff for API calls, display offline messages when network is unavailable, and persist application state in localStorage for resilience.",
             "status": "pending",
-            "testStrategy": "Simulate network failures and offline conditions to verify that errors are handled gracefully, retries occur, and state is persisted across page reloads."
+            "testStrategy": "Simulate network failures and offline conditions to verify that errors are handled gracefully, retries occur, and state is persisted across page reloads.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -1106,7 +1158,8 @@
             ],
             "details": "Integrate lazy loading for images and components in Elm, and add virtual scrolling for report displays or lists using libraries or custom implementations to handle large datasets efficiently.",
             "status": "pending",
-            "testStrategy": "Measure initial load times and subsequent interactions, ensuring they stay under 2 seconds for initial load and 3 seconds for reports, using browser performance tools."
+            "testStrategy": "Measure initial load times and subsequent interactions, ensuring they stay under 2 seconds for initial load and 3 seconds for reports, using browser performance tools.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -1120,15 +1173,23 @@
             ],
             "details": "Use the build tool (Vite or webpack) to generate static HTML/JS/CSS files, set up an S3 bucket for hosting, configure CloudFront for CDN delivery, and ensure CORS and routing are handled properly.",
             "status": "pending",
-            "testStrategy": "Validate the static build by serving locally, then deploy and test the live site for correct functionality, load times, and static hosting behavior."
+            "testStrategy": "Validate the static build by serving locally, then deploy and test the live site for correct functionality, load times, and static hosting behavior.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as subtasks address styling, accessibility, error handling, performance, and deployment."
       }
     ],
     "metadata": {
-      "created": "2025-11-03T21:05:10.421Z",
-      "updated": "2025-11-03T21:05:10.421Z",
-      "description": "Tasks for elm context"
+      "version": "1.0.0",
+      "lastModified": "2025-11-03T21:34:18.464Z",
+      "taskCount": 8,
+      "completedCount": 1,
+      "tags": [
+        "elm"
+      ]
     }
   }
 }
