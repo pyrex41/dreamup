@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/dreamup/qa-agent/internal/agent"
+	"github.com/dreamup/qa-agent/internal/evaluator"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +60,13 @@ func runTest(cmd *cobra.Command, args []string) error {
 	}
 	defer bm.Close()
 
+	fmt.Println("📝 Starting console log capture...")
+	// Create and start console logger
+	consoleLogger := agent.NewConsoleLogger()
+	if err := consoleLogger.StartCapture(bm.GetContext()); err != nil {
+		return fmt.Errorf("failed to start console logger: %w", err)
+	}
+
 	fmt.Printf("📍 Navigating to %s...\n", testURL)
 	// Load the game URL
 	if err := bm.LoadGame(testURL); err != nil {
@@ -92,8 +101,64 @@ func runTest(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("   Saved: %s\n", finalScreenshot.Filepath)
 
+	// Save console logs
+	fmt.Println("💾 Saving console logs...")
+	logFilepath, err := consoleLogger.SaveToTemp()
+	if err != nil {
+		return fmt.Errorf("failed to save console logs: %w", err)
+	}
+	fmt.Printf("   Saved: %s\n", logFilepath)
+
+	// Display log summary
+	logs := consoleLogger.GetLogs()
+	errors := consoleLogger.GetLogsByLevel(agent.LogLevelError)
+	warnings := consoleLogger.GetLogsByLevel(agent.LogLevelWarning)
+
+	fmt.Printf("\n📊 Console Log Summary:\n")
+	fmt.Printf("   Total: %d logs\n", len(logs))
+	fmt.Printf("   Errors: %d\n", len(errors))
+	fmt.Printf("   Warnings: %d\n", len(warnings))
+
+	// Evaluate game playability using LLM
+	fmt.Println("\n🤖 Evaluating game playability with AI...")
+	gameEval, err := evaluator.NewGameEvaluator("")
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Could not initialize evaluator: %v\n", err)
+		fmt.Println("   Skipping AI evaluation (set OPENAI_API_KEY to enable)")
+	} else {
+		screenshots := []*agent.Screenshot{initialScreenshot, finalScreenshot}
+		score, err := gameEval.EvaluateGame(context.Background(), screenshots, logs)
+		if err != nil {
+			fmt.Printf("⚠️  Warning: AI evaluation failed: %v\n", err)
+		} else {
+			// Display evaluation results
+			fmt.Printf("\n🎯 AI Evaluation Results:\n")
+			fmt.Printf("   Overall Score: %d/100\n", score.OverallScore)
+			fmt.Printf("   Loads Correctly: %v\n", score.LoadsCorrectly)
+			fmt.Printf("   Interactivity: %d/100\n", score.InteractivityScore)
+			fmt.Printf("   Visual Quality: %d/100\n", score.VisualQuality)
+			fmt.Printf("   Error Severity: %d/100\n", score.ErrorSeverity)
+
+			if len(score.Issues) > 0 {
+				fmt.Printf("\n   Issues Found:\n")
+				for _, issue := range score.Issues {
+					fmt.Printf("   - %s\n", issue)
+				}
+			}
+
+			if len(score.Recommendations) > 0 {
+				fmt.Printf("\n   Recommendations:\n")
+				for _, rec := range score.Recommendations {
+					fmt.Printf("   - %s\n", rec)
+				}
+			}
+
+			fmt.Printf("\n   Reasoning: %s\n", score.Reasoning)
+		}
+	}
+
 	fmt.Println("\n✅ Test completed successfully!")
-	fmt.Printf("📁 Screenshots saved to temp directory\n")
+	fmt.Printf("📁 Evidence saved to temp directory\n")
 
 	return nil
 }

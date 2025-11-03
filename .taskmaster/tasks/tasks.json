@@ -380,7 +380,7 @@
         "dependencies": [
           "5"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -405,7 +405,8 @@
         ],
         "complexity": 6,
         "recommendedSubtasks": 2,
-        "expansionPrompt": "Break down into subtasks for CSS selector-based detection and OCR/text matching integration."
+        "expansionPrompt": "Break down into subtasks for CSS selector-based detection and OCR/text matching integration.",
+        "updatedAt": "2025-11-03T19:49:51.206Z"
       },
       {
         "id": "7",
@@ -417,7 +418,7 @@
         "dependencies": [
           "5"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -480,27 +481,28 @@
         ],
         "complexity": 4,
         "recommendedSubtasks": 0,
-        "expansionPrompt": "No expansion needed as log capture is a single integration point."
+        "expansionPrompt": "No expansion needed as log capture is a single integration point.",
+        "updatedAt": "2025-11-03T19:45:37.547Z"
       },
       {
         "id": "8",
         "title": "Implement LLM Evaluation",
-        "description": "Integrate Anthropic Claude API for AI-based playability assessment.",
-        "details": "In internal/evaluator/llm.go, set up Anthropic client. Encode screenshots to base64, construct prompt from PRD's structure. Send to Claude 3.5 Sonnet, parse JSON response for scores. Handle vision analysis with up to 5 images. Implement scoring algorithm as per PRD. Pseudo-code: func EvaluateGame(screenshots []Screenshot, logs []LogEntry, actions []Action) (*PlayabilityScore, error) { ... build prompt, call API, parse response ... }",
-        "testStrategy": "Mock API responses for unit tests; verify prompt construction and JSON parsing. Integration test with real API on sample games; compare scores against expected outcomes.",
-        "priority": "high",
+        "description": "Integrate OpenAI GPT-4 Vision API for AI-based playability assessment.",
+        "status": "done",
         "dependencies": [
           "3",
           "7"
         ],
-        "status": "pending",
+        "priority": "high",
+        "details": "In internal/evaluator/llm.go, set up OpenAI client. Encode screenshots to base64, construct prompt from PRD's structure. Send to GPT-4 Vision, parse JSON response for scores. Handle vision analysis with up to 5 images. Implement scoring algorithm as per PRD. Pseudo-code: func EvaluateGame(screenshots []Screenshot, logs []LogEntry, actions []Action) (*PlayabilityScore, error) { ... build prompt, call API, parse response ... }",
+        "testStrategy": "Mock API responses for unit tests; verify prompt construction and JSON parsing. Integration test with real API on sample games; compare scores against expected outcomes.",
         "subtasks": [
           {
             "id": 1,
-            "title": "Set up Anthropic Claude Client",
-            "description": "Initialize the Anthropic client in internal/evaluator/llm.go with API key and configuration for Claude 3.5 Sonnet.",
+            "title": "Set up OpenAI GPT-4 Vision Client",
+            "description": "Initialize the OpenAI client in internal/evaluator/llm.go with API key and configuration for GPT-4 Vision.",
             "dependencies": [],
-            "details": "Implement client setup using the Anthropic SDK, handle authentication with API key, configure timeouts and retry logic for API calls, and prepare the structure for sending prompts and receiving responses.",
+            "details": "Implement client setup using the OpenAI SDK, handle authentication with API key, configure timeouts and retry logic for API calls, and prepare the structure for sending prompts and receiving responses.",
             "status": "pending",
             "testStrategy": "Mock API initialization to verify client creation, authentication, and basic error handling without actual network calls.",
             "parentId": "undefined"
@@ -512,7 +514,7 @@
             "dependencies": [
               1
             ],
-            "details": "Implement base64 encoding for PNG screenshots, build structured prompts including game context from logs and actions, ensure prompt adheres to Claude's vision input format for multiple images, and prepare the data for API submission.",
+            "details": "Implement base64 encoding for PNG screenshots, build structured prompts including game context from logs and actions, ensure prompt adheres to GPT-4 Vision's input format for multiple images, and prepare the data for API submission.",
             "status": "pending",
             "testStrategy": "Unit tests with sample screenshots and mock data to verify base64 encoding accuracy, prompt structure, and handling of up to 5 images.",
             "parentId": "undefined"
@@ -520,7 +522,7 @@
           {
             "id": 3,
             "title": "Parse API Responses and Compute Scores",
-            "description": "Parse the JSON response from Claude API to extract playability scores and implement the scoring algorithm as per PRD.",
+            "description": "Parse the JSON response from OpenAI API to extract playability scores and implement the scoring algorithm as per PRD.",
             "dependencies": [
               2
             ],
@@ -532,7 +534,8 @@
         ],
         "complexity": 8,
         "recommendedSubtasks": 3,
-        "expansionPrompt": "Break down into subtasks for setting up Anthropic client and API calls, encoding screenshots and building prompts, and parsing responses for scoring."
+        "expansionPrompt": "Break down into subtasks for setting up Anthropic client and API calls, encoding screenshots and building prompts, and parsing responses for scoring.",
+        "updatedAt": "2025-11-03T19:47:56.507Z"
       },
       {
         "id": "9",
@@ -679,9 +682,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-11-03T19:36:15.106Z",
+      "lastModified": "2025-11-03T19:49:51.207Z",
       "taskCount": 11,
-      "completedCount": 5,
+      "completedCount": 8,
       "tags": [
         "master"
       ]

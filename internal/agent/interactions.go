@@ -233,3 +233,61 @@ func ExecutePlan(ctx context.Context, plan InteractionPlan) ([]*Screenshot, erro
 
 	return screenshots, nil
 }
+
+// NewSmartGamePlan creates an interaction plan using UI detection
+func NewSmartGamePlan(ctx context.Context) (InteractionPlan, error) {
+	detector := NewUIDetector(ctx)
+
+	plan := InteractionPlan{
+		Name:           "Smart Game Test (UI Detection)",
+		DefaultTimeout: 30 * time.Second,
+		Actions:        make([]Action, 0),
+	}
+
+	// Capture initial state
+	plan.Actions = append(plan.Actions,
+		NewScreenshotAction(ContextInitial, "Capture initial game state"),
+		NewWaitAction(2*time.Second, "Wait for game to fully load"),
+	)
+
+	// Detect and click start button
+	startButton, err := detector.FindBestStartButton()
+	if err != nil {
+		// Fall back to common selectors if detection fails
+		plan.Actions = append(plan.Actions,
+			NewClickAction("button.start, #start-button, .play-button, button:contains('Start'), button:contains('Play')", "Click start button (fallback)"),
+		)
+	} else {
+		plan.Actions = append(plan.Actions,
+			NewClickAction(startButton, "Click detected start button"),
+		)
+	}
+
+	plan.Actions = append(plan.Actions,
+		NewWaitAction(1*time.Second, "Wait after clicking start"),
+		NewScreenshotAction(ContextGameplay, "Capture gameplay started"),
+	)
+
+	// Check if game has canvas (likely keyboard-controlled)
+	if detector.HasGameCanvas() {
+		plan.Actions = append(plan.Actions,
+			NewKeypressAction("ArrowUp", "Press up arrow"),
+			NewWaitAction(500*time.Millisecond, "Short wait"),
+			NewKeypressAction("Space", "Press spacebar"),
+			NewWaitAction(500*time.Millisecond, "Short wait"),
+			NewKeypressAction("ArrowDown", "Press down arrow"),
+			NewWaitAction(2*time.Second, "Wait for gameplay actions"),
+		)
+	} else {
+		// For non-canvas games, just wait to observe
+		plan.Actions = append(plan.Actions,
+			NewWaitAction(3*time.Second, "Observe game behavior"),
+		)
+	}
+
+	plan.Actions = append(plan.Actions,
+		NewScreenshotAction(ContextFinal, "Capture final game state"),
+	)
+
+	return plan, nil
+}
