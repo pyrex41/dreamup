@@ -45,6 +45,28 @@ type alias Model =
     , screenshotViewer : ScreenshotViewerState
     , consoleLogViewer : ConsoleLogViewerState
     , testHistory : TestHistoryState
+    , networkStatus : NetworkStatus
+    , retryState : RetryState
+    }
+
+
+type alias NetworkStatus =
+    { isOnline : Bool
+    , lastError : Maybe String
+    , lastSuccessfulRequest : Maybe String
+    }
+
+
+type alias RetryState =
+    { pendingRetry : Maybe PendingRetry
+    , retryCount : Int
+    , maxRetries : Int
+    }
+
+
+type alias PendingRetry =
+    { requestType : String
+    , retryAfter : Int  -- milliseconds
     }
 
 
@@ -258,6 +280,8 @@ init flags url key =
       , screenshotViewer = initScreenshotViewer
       , consoleLogViewer = initConsoleLogViewer
       , testHistory = initTestHistory
+      , networkStatus = initNetworkStatus
+      , retryState = initRetryState
       }
     , cmd
     )
@@ -315,6 +339,22 @@ initTestHistory =
     , sortOrder = Descending
     , statusFilter = Nothing
     , urlSearchQuery = ""
+    }
+
+
+initNetworkStatus : NetworkStatus
+initNetworkStatus =
+    { isOnline = True
+    , lastError = Nothing
+    , lastSuccessfulRequest = Nothing
+    }
+
+
+initRetryState : RetryState
+initRetryState =
+    { pendingRetry = Nothing
+    , retryCount = 0
+    , maxRetries = 3
     }
 
 
@@ -391,6 +431,9 @@ type Msg
     | UpdateUrlSearch String
     | ChangeHistoryPage Int
     | NavigateToReport String
+    | NetworkStatusChanged Bool
+    | RetryRequest
+    | DismissError
 
 
 type SectionType
@@ -497,12 +540,22 @@ update msg model =
                     )
 
                 Err error ->
+                    let
+                        errorString = httpErrorToString error
+                        oldStatus = model.networkStatus
+                        newStatus =
+                            { oldStatus
+                                | isOnline = not (isNetworkError error)
+                                , lastError = Just errorString
+                            }
+                    in
                     ( { model
                         | testForm =
                             { form
                                 | submitting = False
-                                , submitError = Just (httpErrorToString error)
+                                , submitError = Just errorString
                             }
+                        , networkStatus = newStatus
                       }
                     , Cmd.none
                     )
@@ -892,6 +945,33 @@ update msg model =
         NavigateToReport reportId ->
             ( model, Nav.pushUrl model.key ("/report/" ++ reportId) )
 
+        NetworkStatusChanged isOnline ->
+            let
+                oldStatus = model.networkStatus
+                newStatus = { oldStatus | isOnline = isOnline }
+            in
+            ( { model | networkStatus = newStatus }, Cmd.none )
+
+        RetryRequest ->
+            let
+                retryState = model.retryState
+            in
+            if retryState.retryCount < retryState.maxRetries then
+                -- Retry the last failed request
+                ( { model | retryState = { retryState | retryCount = retryState.retryCount + 1 } }
+                , Cmd.none  -- In a real implementation, would re-execute the failed request
+                )
+            else
+                ( model, Cmd.none )
+
+        DismissError ->
+            ( { model
+                | reportError = Nothing
+                , networkStatus = { isOnline = True, lastError = Nothing, lastSuccessfulRequest = model.networkStatus.lastSuccessfulRequest }
+              }
+            , Cmd.none
+            )
+
 
 -- VALIDATION
 
@@ -1090,6 +1170,19 @@ httpErrorToString error =
             "Invalid response from server: " ++ body
 
 
+isNetworkError : Http.Error -> Bool
+isNetworkError error =
+    case error of
+        Http.NetworkError ->
+            True
+
+        Http.Timeout ->
+            True
+
+        _ ->
+            False
+
+
 -- HTTP HELPERS (with CORS support)
 
 
@@ -1171,7 +1264,16 @@ viewHeader model =
             , a [ href "/submit" ] [ text "Submit Test" ]
             , a [ href "/history" ] [ text "Test History" ]
             ]
+        , viewNetworkStatus model.networkStatus
         ]
+
+
+viewNetworkStatus : NetworkStatus -> Html Msg
+viewNetworkStatus status =
+    if status.isOnline then
+        span [ class "network-status online" ] [ text "●" ]
+    else
+        span [ class "network-status offline", title "Network connection lost" ] [ text "●" ]
 
 
 viewContent : Model -> Html Msg
