@@ -7,6 +7,7 @@ import (
 
 	"github.com/dreamup/qa-agent/internal/agent"
 	"github.com/dreamup/qa-agent/internal/evaluator"
+	"github.com/dreamup/qa-agent/internal/reporter"
 	"github.com/spf13/cobra"
 )
 
@@ -46,6 +47,11 @@ func runTest(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   Headless Mode: %v\n", headless)
 	fmt.Printf("   Max Duration: %d seconds\n", maxDuration)
 	fmt.Println()
+
+	// Initialize report builder
+	reportBuilder := reporter.NewReportBuilder(testURL)
+	reportBuilder.AddMetadata("agent_version", version)
+	reportBuilder.AddMetadata("headless", fmt.Sprintf("%v", headless))
 
 	// Ensure output directory exists
 	if err := EnsureOutputDir(outputDir); err != nil {
@@ -154,11 +160,61 @@ func runTest(cmd *cobra.Command, args []string) error {
 			}
 
 			fmt.Printf("\n   Reasoning: %s\n", score.Reasoning)
+
+			// Set score in report builder
+			reportBuilder.SetScore(score)
 		}
 	}
 
+	// Build report
+	fmt.Println("\n📊 Generating test report...")
+	screenshots := []*agent.Screenshot{initialScreenshot, finalScreenshot}
+	reportBuilder.SetScreenshots(screenshots)
+	reportBuilder.SetConsoleLogs(logs)
+
+	report, err := reportBuilder.Build()
+	if err != nil {
+		return fmt.Errorf("failed to build report: %w", err)
+	}
+
+	// Save report locally
+	reportPath, err := report.SaveToTemp()
+	if err != nil {
+		return fmt.Errorf("failed to save report: %w", err)
+	}
+	fmt.Printf("   Report saved: %s\n", reportPath)
+
+	// Upload to S3 (optional)
+	s3Uploader, err := reporter.NewS3Uploader("", "")
+	if err != nil {
+		fmt.Printf("   ⚠️  S3 upload skipped (configure AWS credentials to enable): %v\n", err)
+	} else {
+		fmt.Println("   Uploading artifacts to S3...")
+		err = s3Uploader.UploadReportWithArtifacts(context.Background(), report, screenshots, logFilepath)
+		if err != nil {
+			fmt.Printf("   ⚠️  S3 upload failed: %v\n", err)
+		} else {
+			s3URL := s3Uploader.GetReportURL(report.ReportID)
+			fmt.Printf("   ✅ Report uploaded: %s\n", s3URL)
+		}
+	}
+
+	// Display summary
+	fmt.Printf("\n📋 Test Summary:\n")
+	fmt.Printf("   Status: %s\n", report.Summary.Status)
+	fmt.Printf("   Duration: %.2f seconds\n", report.Duration.Seconds())
+	if len(report.Summary.PassedChecks) > 0 {
+		fmt.Printf("   ✅ Passed: %d checks\n", len(report.Summary.PassedChecks))
+	}
+	if len(report.Summary.FailedChecks) > 0 {
+		fmt.Printf("   ⚠️  Failed: %d checks\n", len(report.Summary.FailedChecks))
+	}
+	if len(report.Summary.CriticalIssues) > 0 {
+		fmt.Printf("   ❌ Critical: %d issues\n", len(report.Summary.CriticalIssues))
+	}
+
 	fmt.Println("\n✅ Test completed successfully!")
-	fmt.Printf("📁 Evidence saved to temp directory\n")
+	fmt.Printf("📁 Report ID: %s\n", report.ReportID)
 
 	return nil
 }
