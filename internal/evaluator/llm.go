@@ -8,6 +8,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/dreamup/qa-agent/internal/agent"
 	openai "github.com/sashabaranov/go-openai"
 )
@@ -38,12 +41,51 @@ type GameEvaluator struct {
 	model  string
 }
 
+// getAPIKeyFromSecretsManager fetches the OpenAI API key from AWS Secrets Manager
+func getAPIKeyFromSecretsManager(ctx context.Context, secretName string) (string, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	client := secretsmanager.NewFromConfig(cfg)
+	input := &secretsmanager.GetSecretValueInput{
+		SecretId: aws.String(secretName),
+	}
+
+	result, err := client.GetSecretValue(ctx, input)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret value: %w", err)
+	}
+
+	if result.SecretString == nil {
+		return "", fmt.Errorf("secret value is nil")
+	}
+
+	return *result.SecretString, nil
+}
+
 // NewGameEvaluator creates a new game evaluator with OpenAI client
+// API key resolution order:
+// 1. Provided apiKey parameter
+// 2. OPENAI_SECRET_NAME environment variable (fetches from Secrets Manager)
+// 3. OPENAI_API_KEY environment variable (legacy, direct key)
 func NewGameEvaluator(apiKey string) (*GameEvaluator, error) {
 	if apiKey == "" {
-		apiKey = os.Getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("OPENAI_API_KEY not provided and not found in environment")
+		// Check if we should fetch from Secrets Manager
+		secretName := os.Getenv("OPENAI_SECRET_NAME")
+		if secretName != "" {
+			var err error
+			apiKey, err = getAPIKeyFromSecretsManager(context.Background(), secretName)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch API key from Secrets Manager: %w", err)
+			}
+		} else {
+			// Fall back to direct environment variable (legacy support)
+			apiKey = os.Getenv("OPENAI_API_KEY")
+			if apiKey == "" {
+				return nil, fmt.Errorf("OPENAI_API_KEY or OPENAI_SECRET_NAME not provided")
+			}
 		}
 	}
 

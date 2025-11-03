@@ -92,19 +92,22 @@ func runTest(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("   Saved: %s\n", initialScreenshot.Filepath)
 
-	// Wait a moment for page to fully load and cookie consent to appear
+	// Wait for page resources to load (reduced from 4s to 2s)
 	fmt.Println("⏳ Waiting for page to load...")
-	time.Sleep(4 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	// Handle cookie consent if present
 	fmt.Println("🍪 Checking for cookie consent...")
 	detector := agent.NewUIDetector(bm.GetContext())
+	var uiWarnings []string
 	if clicked, err := detector.AcceptCookieConsent(); err != nil {
-		fmt.Printf("   ⚠️  Warning: failed to handle cookie consent: %v\n", err)
+		warning := fmt.Sprintf("Cookie consent check failed: %v", err)
+		uiWarnings = append(uiWarnings, warning)
+		fmt.Printf("   ⚠️  Warning: %s\n", warning)
 	} else if clicked {
 		fmt.Println("   ✅ Cookie consent accepted")
-		// Wait a moment for the dialog to close
-		time.Sleep(1 * time.Second)
+		// Brief wait for dialog animation (reduced from 1s to 500ms)
+		time.Sleep(500 * time.Millisecond)
 	} else {
 		fmt.Println("   No cookie consent dialog detected")
 	}
@@ -112,17 +115,20 @@ func runTest(cmd *cobra.Command, args []string) error {
 	// Try to find and click the start/play button
 	fmt.Println("🎮 Looking for start button...")
 	if clicked, err := detector.ClickStartButton(); err != nil {
-		fmt.Printf("   ⚠️  Warning: failed to check for start button: %v\n", err)
+		warning := fmt.Sprintf("Start button check failed: %v", err)
+		uiWarnings = append(uiWarnings, warning)
+		fmt.Printf("   ⚠️  Warning: %s\n", warning)
 	} else if clicked {
 		fmt.Println("   ✅ Game started!")
-		time.Sleep(1 * time.Second) // Wait for game to initialize
+		// Brief wait for game initialization (reduced from 1s to 500ms)
+		time.Sleep(500 * time.Millisecond)
 	} else {
 		fmt.Println("   No start button detected, game may auto-start")
 	}
 
-	// Wait a bit for gameplay
+	// Wait for game to render initial state (reduced from 3s to 2s)
 	fmt.Println("⏳ Waiting for gameplay...")
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 
 	// Simulate some gameplay interactions
 	fmt.Println("🕹️  Simulating gameplay...")
@@ -145,7 +151,8 @@ func runTest(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("   Game interactions completed")
-	time.Sleep(1 * time.Second)
+	// Brief wait for game state to settle (reduced from 1s to 500ms)
+	time.Sleep(500 * time.Millisecond)
 
 	fmt.Println("📸 Capturing final screenshot...")
 	// Capture final screenshot
@@ -223,6 +230,14 @@ func runTest(cmd *cobra.Command, args []string) error {
 	screenshots := []*agent.Screenshot{initialScreenshot, finalScreenshot}
 	reportBuilder.SetScreenshots(screenshots)
 	reportBuilder.SetConsoleLogs(logs)
+
+	// Add UI warnings to report metadata
+	for i, warning := range uiWarnings {
+		reportBuilder.AddMetadata(fmt.Sprintf("ui_warning_%d", i+1), warning)
+	}
+	if len(uiWarnings) > 0 {
+		reportBuilder.AddMetadata("ui_warning_count", fmt.Sprintf("%d", len(uiWarnings)))
+	}
 
 	report, err := reportBuilder.Build()
 	if err != nil {

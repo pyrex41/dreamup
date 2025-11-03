@@ -32,6 +32,65 @@ resource "aws_s3_bucket_versioning" "qa_artifacts" {
   }
 }
 
+# S3 bucket public access block
+resource "aws_s3_bucket_public_access_block" "qa_artifacts" {
+  bucket = aws_s3_bucket.qa_artifacts.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# S3 bucket server-side encryption
+resource "aws_s3_bucket_server_side_encryption_configuration" "qa_artifacts" {
+  bucket = aws_s3_bucket.qa_artifacts.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+# S3 bucket lifecycle configuration
+resource "aws_s3_bucket_lifecycle_configuration" "qa_artifacts" {
+  bucket = aws_s3_bucket.qa_artifacts.id
+
+  rule {
+    id     = "expire-old-reports"
+    status = "Enabled"
+
+    expiration {
+      days = 90
+    }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+}
+
+# Secrets Manager secret for OpenAI API key
+resource "aws_secretsmanager_secret" "openai_api_key" {
+  name        = "${var.function_name}-openai-key"
+  description = "OpenAI API key for LLM evaluation"
+
+  tags = {
+    Name        = "DreamUp OpenAI API Key"
+    Environment = var.environment
+  }
+}
+
+# Secrets Manager secret version (only created if variable provided)
+resource "aws_secretsmanager_secret_version" "openai_api_key" {
+  count = var.openai_api_key != "" ? 1 : 0
+
+  secret_id     = aws_secretsmanager_secret.openai_api_key.id
+  secret_string = var.openai_api_key
+}
+
 # IAM role for Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "${var.function_name}-role"
@@ -74,6 +133,25 @@ resource "aws_iam_role_policy" "lambda_s3_policy" {
   })
 }
 
+# IAM policy for Secrets Manager access
+resource "aws_iam_role_policy" "lambda_secrets_policy" {
+  name = "${var.function_name}-secrets-policy"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.openai_api_key.arn
+      }
+    ]
+  })
+}
+
 # Attach CloudWatch Logs policy
 resource "aws_iam_role_policy_attachment" "lambda_logs" {
   role       = aws_iam_role.lambda_role.name
@@ -93,9 +171,9 @@ resource "aws_lambda_function" "qa_agent" {
 
   environment {
     variables = {
-      S3_BUCKET_NAME   = aws_s3_bucket.qa_artifacts.id
-      AWS_REGION       = var.aws_region
-      OPENAI_API_KEY   = var.openai_api_key
+      S3_BUCKET_NAME        = aws_s3_bucket.qa_artifacts.id
+      AWS_REGION            = var.aws_region
+      OPENAI_SECRET_NAME    = aws_secretsmanager_secret.openai_api_key.name
     }
   }
 

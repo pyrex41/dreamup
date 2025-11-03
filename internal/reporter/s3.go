@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -86,8 +87,8 @@ func (u *S3Uploader) UploadFile(ctx context.Context, filepath, s3Key string) (st
 }
 
 // getContentType determines content type from file extension
-func (u *S3Uploader) getContentType(filepath string) string {
-	ext := strings.ToLower(filepath[strings.LastIndex(filepath, "."):])
+func (u *S3Uploader) getContentType(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".json":
 		return "application/json"

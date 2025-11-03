@@ -23,9 +23,10 @@ variable "s3_bucket_name" {
 }
 
 variable "openai_api_key" {
-  description = "OpenAI API key for LLM evaluation"
+  description = "OpenAI API key for LLM evaluation (optional - can be set directly in AWS Secrets Manager)"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "enable_function_url" {

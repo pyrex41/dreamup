@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 
@@ -56,9 +57,18 @@ func HandleRequest(ctx context.Context, event LambdaEvent) (LambdaResponse, erro
 		}, fmt.Errorf("missing game_url")
 	}
 
-	// Set default timeout
+	// Validate URL format and scheme
+	parsedURL, err := url.ParseRequestURI(event.GameURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return LambdaResponse{
+			Success: false,
+			Error:   "game_url must be a valid http or https URL",
+		}, fmt.Errorf("invalid game_url: %s", event.GameURL)
+	}
+
+	// Set default timeout (increased buffer to 60s for safe cleanup)
 	if event.Timeout == 0 {
-		event.Timeout = 280 // 5 min Lambda - 20s buffer
+		event.Timeout = 240 // 5 min Lambda - 60s buffer (was 280 - 20s)
 	}
 
 	// Create context with timeout
