@@ -12,6 +12,37 @@ node_modules/
 # Environment variables
 .env
 
+# Go build artifacts
+qa
+lambda-bootstrap
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Test results and reports
+test-results/
+reports/
+*.html
+*.json
+!go.mod
+!go.sum
+!package.json
+!package-lock.json
+!elm.json
+!.taskmaster/**/*.json
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/elm.json
+
+# Screenshots and test artifacts
+screenshots/
+*.png
+*.jpg
+*.jpeg
+
 # Editor directories and files
 .idea
 .vscode
@@ -23,3 +54,4 @@ node_modules/
 
 # OS specific
 .DS_Store
+Thumbs.db
