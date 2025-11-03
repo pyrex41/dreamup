@@ -4,7 +4,7 @@ import Browser
 import Browser.Navigation as Nav
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -36,6 +36,17 @@ type alias Model =
     , url : Url.Url
     , route : Route
     , apiBaseUrl : String
+    , testForm : TestForm
+    }
+
+
+type alias TestForm =
+    { gameUrl : String
+    , maxDuration : Int
+    , headless : Bool
+    , validationError : Maybe String
+    , submitting : Bool
+    , submitError : Maybe String
     }
 
 
@@ -54,9 +65,21 @@ init flags url key =
       , url = url
       , route = parseUrl url
       , apiBaseUrl = "http://localhost:8080/api"  -- Update with actual API URL
+      , testForm = initTestForm
       }
     , Cmd.none
     )
+
+
+initTestForm : TestForm
+initTestForm =
+    { gameUrl = ""
+    , maxDuration = 60
+    , headless = False
+    , validationError = Nothing
+    , submitting = False
+    , submitError = Nothing
+    }
 
 
 -- URL PARSING
@@ -86,6 +109,11 @@ type Msg
     = NoOp
     | LinkClicked Browser.UrlRequest
     | UrlChanged Url.Url
+    | UpdateGameUrl String
+    | UpdateMaxDuration String
+    | ToggleHeadless
+    | SubmitTest
+    | TestSubmitted (Result Http.Error TestSubmitResponse)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -103,9 +131,148 @@ update msg model =
                     ( model, Nav.load href )
 
         UrlChanged url ->
-            ( { model | url = url, route = parseUrl url }
+            ( { model | url = url, route = parseUrl url, testForm = initTestForm }
             , Cmd.none
             )
+
+        UpdateGameUrl newUrl ->
+            let
+                form =
+                    model.testForm
+
+                updatedForm =
+                    { form | gameUrl = newUrl, validationError = Nothing }
+            in
+            ( { model | testForm = updatedForm }, Cmd.none )
+
+        UpdateMaxDuration durationStr ->
+            let
+                form =
+                    model.testForm
+
+                duration =
+                    String.toInt durationStr |> Maybe.withDefault 60
+
+                updatedForm =
+                    { form | maxDuration = duration }
+            in
+            ( { model | testForm = updatedForm }, Cmd.none )
+
+        ToggleHeadless ->
+            let
+                form =
+                    model.testForm
+
+                updatedForm =
+                    { form | headless = not form.headless }
+            in
+            ( { model | testForm = updatedForm }, Cmd.none )
+
+        SubmitTest ->
+            let
+                form =
+                    model.testForm
+            in
+            case validateUrl form.gameUrl of
+                Just error ->
+                    ( { model | testForm = { form | validationError = Just error } }, Cmd.none )
+
+                Nothing ->
+                    ( { model | testForm = { form | submitting = True, submitError = Nothing } }
+                    , submitTestRequest model.apiBaseUrl form
+                    )
+
+        TestSubmitted result ->
+            let
+                form =
+                    model.testForm
+            in
+            case result of
+                Ok response ->
+                    ( { model | testForm = initTestForm }
+                    , Nav.pushUrl model.key ("/test/" ++ response.testId)
+                    )
+
+                Err error ->
+                    ( { model
+                        | testForm =
+                            { form
+                                | submitting = False
+                                , submitError = Just (httpErrorToString error)
+                            }
+                      }
+                    , Cmd.none
+                    )
+
+
+-- VALIDATION
+
+
+validateUrl : String -> Maybe String
+validateUrl url =
+    if String.isEmpty url then
+        Just "Please enter a game URL"
+
+    else if not (String.startsWith "http://" url || String.startsWith "https://" url) then
+        Just "URL must start with http:// or https://"
+
+    else if String.length url < 10 then
+        Just "Please enter a valid URL"
+
+    else
+        Nothing
+
+
+-- API TYPES AND REQUESTS
+
+
+type alias TestSubmitResponse =
+    { testId : String
+    , estimatedCompletionTime : Int
+    }
+
+
+submitTestRequest : String -> TestForm -> Cmd Msg
+submitTestRequest apiBaseUrl form =
+    let
+        body =
+            Encode.object
+                [ ( "url", Encode.string form.gameUrl )
+                , ( "maxDuration", Encode.int form.maxDuration )
+                , ( "headless", Encode.bool form.headless )
+                ]
+    in
+    postWithCors
+        (apiBaseUrl ++ "/tests")
+        body
+        testSubmitResponseDecoder
+        TestSubmitted
+
+
+testSubmitResponseDecoder : Decode.Decoder TestSubmitResponse
+testSubmitResponseDecoder =
+    Decode.map2 TestSubmitResponse
+        (Decode.field "testId" Decode.string)
+        (Decode.field "estimatedCompletionTime" Decode.int)
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString error =
+    case error of
+        Http.BadUrl url ->
+            "Invalid URL: " ++ url
+
+        Http.Timeout ->
+            "Request timed out. Please try again."
+
+        Http.NetworkError ->
+            "Network error. Please check your connection."
+
+        Http.BadStatus status ->
+            "Server error (status " ++ String.fromInt status ++ ")"
+
+        Http.BadBody body ->
+            "Invalid response from server: " ++ body
 
 
 -- HTTP HELPERS (with CORS support)
@@ -195,7 +362,7 @@ viewContent model =
                 viewHome
 
             TestSubmission ->
-                viewTestSubmission
+                viewTestSubmission model
 
             TestStatus testId ->
                 viewTestStatus testId
@@ -223,11 +390,86 @@ viewHome =
         ]
 
 
-viewTestSubmission : Html Msg
-viewTestSubmission =
+viewTestSubmission : Model -> Html Msg
+viewTestSubmission model =
+    let
+        form =
+            model.testForm
+    in
     div [ class "page test-submission" ]
-        [ h2 [] [ text "Submit Test" ]
-        , p [] [ text "Test submission form will be implemented here." ]
+        [ h2 [] [ text "Submit New Test" ]
+        , p [] [ text "Enter a game URL to start automated QA testing." ]
+        , Html.form [ onSubmit SubmitTest, class "test-form" ]
+            [ div [ class "form-group" ]
+                [ label [ for "game-url" ] [ text "Game URL" ]
+                , input
+                    [ type_ "text"
+                    , id "game-url"
+                    , placeholder "https://example.com/game"
+                    , value form.gameUrl
+                    , onInput UpdateGameUrl
+                    , disabled form.submitting
+                    , class "form-input"
+                    ]
+                    []
+                , case form.validationError of
+                    Just error ->
+                        div [ class "error" ] [ text error ]
+
+                    Nothing ->
+                        text ""
+                ]
+            , div [ class "form-group" ]
+                [ label [ for "max-duration" ]
+                    [ text ("Max Duration: " ++ String.fromInt form.maxDuration ++ "s") ]
+                , input
+                    [ type_ "range"
+                    , id "max-duration"
+                    , Html.Attributes.min "60"
+                    , Html.Attributes.max "300"
+                    , value (String.fromInt form.maxDuration)
+                    , onInput UpdateMaxDuration
+                    , disabled form.submitting
+                    , class "form-slider"
+                    ]
+                    []
+                , p [ class "help-text" ] [ text "Maximum time allowed for the test (60-300 seconds)" ]
+                ]
+            , div [ class "form-group" ]
+                [ label [ class "checkbox-label" ]
+                    [ input
+                        [ type_ "checkbox"
+                        , checked form.headless
+                        , onClick ToggleHeadless
+                        , disabled form.submitting
+                        ]
+                        []
+                    , text " Run in headless mode (no visible browser)"
+                    ]
+                ]
+            , case form.submitError of
+                Just error ->
+                    div [ class "error" ] [ text error ]
+
+                Nothing ->
+                    text ""
+            , div [ class "form-actions" ]
+                [ button
+                    [ type_ "submit"
+                    , class "button primary"
+                    , disabled (form.submitting || String.isEmpty form.gameUrl)
+                    ]
+                    [ text
+                        (if form.submitting then
+                            "Submitting..."
+
+                         else
+                            "Start Test"
+                        )
+                    ]
+                , a [ href "/", class "button secondary" ] [ text "Cancel" ]
+                ]
+            ]
         ]
 
 
