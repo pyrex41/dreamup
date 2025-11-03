@@ -44,6 +44,7 @@ type alias Model =
     , expandedSections : ExpandedSections
     , screenshotViewer : ScreenshotViewerState
     , consoleLogViewer : ConsoleLogViewerState
+    , testHistory : TestHistoryState
     }
 
 
@@ -93,6 +94,42 @@ type alias LevelFilters =
     , showDebug : Bool
     , showLog : Bool
     }
+
+
+type alias TestHistoryState =
+    { reports : List ReportSummary
+    , loading : Bool
+    , error : Maybe String
+    , currentPage : Int
+    , totalPages : Int
+    , itemsPerPage : Int
+    , sortBy : SortField
+    , sortOrder : SortOrder
+    , statusFilter : Maybe String
+    , urlSearchQuery : String
+    }
+
+
+type alias ReportSummary =
+    { reportId : String
+    , gameUrl : String
+    , timestamp : String
+    , status : String
+    , overallScore : Maybe Int
+    , duration : Int
+    }
+
+
+type SortField
+    = SortByTimestamp
+    | SortByScore
+    | SortByDuration
+    | SortByStatus
+
+
+type SortOrder
+    = Ascending
+    | Descending
 
 
 type alias TestForm =
@@ -202,6 +239,9 @@ init flags url key =
                 ReportView reportId ->
                     fetchReport ("http://localhost:8080/api") reportId
 
+                TestHistory ->
+                    fetchTestHistory ("http://localhost:8080/api") initTestHistory
+
                 _ ->
                     Cmd.none
     in
@@ -217,6 +257,7 @@ init flags url key =
       , expandedSections = initExpandedSections
       , screenshotViewer = initScreenshotViewer
       , consoleLogViewer = initConsoleLogViewer
+      , testHistory = initTestHistory
       }
     , cmd
     )
@@ -259,6 +300,21 @@ initLevelFilters =
     , showInfo = True
     , showDebug = True
     , showLog = True
+    }
+
+
+initTestHistory : TestHistoryState
+initTestHistory =
+    { reports = []
+    , loading = False
+    , error = Nothing
+    , currentPage = 1
+    , totalPages = 1
+    , itemsPerPage = 20
+    , sortBy = SortByTimestamp
+    , sortOrder = Descending
+    , statusFilter = Nothing
+    , urlSearchQuery = ""
     }
 
 
@@ -327,6 +383,14 @@ type Msg
     | ToggleLogExpanded Int
     | ScrollLogs Int
     | ExportLogs String
+    | FetchTestHistory
+    | TestHistoryFetched (Result Http.Error (List ReportSummary))
+    | ChangeSortField SortField
+    | ToggleSortOrder
+    | UpdateStatusFilter String
+    | UpdateUrlSearch String
+    | ChangeHistoryPage Int
+    | NavigateToReport String
 
 
 type SectionType
@@ -725,6 +789,109 @@ update msg model =
             -- Export functionality will be implemented via ports or download
             ( model, Cmd.none )
 
+        FetchTestHistory ->
+            ( { model | testHistory = { initTestHistory | loading = True } }
+            , fetchTestHistory model.apiBaseUrl model.testHistory
+            )
+
+        TestHistoryFetched result ->
+            case result of
+                Ok reports ->
+                    let
+                        history =
+                            model.testHistory
+
+                        updatedHistory =
+                            { history
+                                | reports = reports
+                                , loading = False
+                                , error = Nothing
+                                , totalPages = ceiling (toFloat (List.length reports) / toFloat history.itemsPerPage)
+                            }
+                    in
+                    ( { model | testHistory = updatedHistory }, Cmd.none )
+
+                Err error ->
+                    let
+                        history =
+                            model.testHistory
+
+                        updatedHistory =
+                            { history
+                                | loading = False
+                                , error = Just (httpErrorToString error)
+                            }
+                    in
+                    ( { model | testHistory = updatedHistory }, Cmd.none )
+
+        ChangeSortField field ->
+            let
+                history =
+                    model.testHistory
+
+                updatedHistory =
+                    { history | sortBy = field }
+            in
+            ( { model | testHistory = updatedHistory }, Cmd.none )
+
+        ToggleSortOrder ->
+            let
+                history =
+                    model.testHistory
+
+                newOrder =
+                    case history.sortOrder of
+                        Ascending ->
+                            Descending
+
+                        Descending ->
+                            Ascending
+
+                updatedHistory =
+                    { history | sortOrder = newOrder }
+            in
+            ( { model | testHistory = updatedHistory }, Cmd.none )
+
+        UpdateStatusFilter status ->
+            let
+                history =
+                    model.testHistory
+
+                newFilter =
+                    if String.isEmpty status then
+                        Nothing
+
+                    else
+                        Just status
+
+                updatedHistory =
+                    { history | statusFilter = newFilter, currentPage = 1 }
+            in
+            ( { model | testHistory = updatedHistory }, Cmd.none )
+
+        UpdateUrlSearch query ->
+            let
+                history =
+                    model.testHistory
+
+                updatedHistory =
+                    { history | urlSearchQuery = query, currentPage = 1 }
+            in
+            ( { model | testHistory = updatedHistory }, Cmd.none )
+
+        ChangeHistoryPage page ->
+            let
+                history =
+                    model.testHistory
+
+                updatedHistory =
+                    { history | currentPage = page }
+            in
+            ( { model | testHistory = updatedHistory }, Cmd.none )
+
+        NavigateToReport reportId ->
+            ( model, Nav.pushUrl model.key ("/report/" ++ reportId) )
+
 
 -- VALIDATION
 
@@ -802,6 +969,32 @@ fetchReport apiBaseUrl reportId =
         (apiBaseUrl ++ "/reports/" ++ reportId)
         reportDecoder
         ReportFetched
+
+
+fetchTestHistory : String -> TestHistoryState -> Cmd Msg
+fetchTestHistory apiBaseUrl history =
+    let
+        queryParams =
+            [ "page=" ++ String.fromInt history.currentPage
+            , "limit=" ++ String.fromInt history.itemsPerPage
+            ]
+                |> String.join "&"
+    in
+    getWithCors
+        (apiBaseUrl ++ "/reports?" ++ queryParams)
+        (Decode.list reportSummaryDecoder)
+        TestHistoryFetched
+
+
+reportSummaryDecoder : Decode.Decoder ReportSummary
+reportSummaryDecoder =
+    Decode.map6 ReportSummary
+        (Decode.field "report_id" Decode.string)
+        (Decode.field "game_url" Decode.string)
+        (Decode.field "timestamp" Decode.string)
+        (Decode.field "status" Decode.string)
+        (Decode.maybe (Decode.at [ "score", "overall_score" ] Decode.int))
+        (Decode.field "duration_ms" Decode.int)
 
 
 reportDecoder : Decode.Decoder Report
@@ -998,7 +1191,7 @@ viewContent model =
                 viewReportView model reportId
 
             TestHistory ->
-                viewTestHistory
+                viewTestHistory model
 
             NotFound ->
                 viewNotFound
@@ -2087,12 +2280,303 @@ formatDuration durationMs =
         String.fromInt secs ++ "s"
 
 
-viewTestHistory : Html Msg
-viewTestHistory =
+{-| Task 7: Test History with Sorting, Filtering, and Pagination -}
+viewTestHistory : Model -> Html Msg
+viewTestHistory model =
+    let
+        history =
+            model.testHistory
+
+        -- Subtask 3: Apply filters and search
+        filteredReports =
+            history.reports
+                |> filterByStatus history.statusFilter
+                |> filterByUrlSearch history.urlSearchQuery
+                |> sortReports history.sortBy history.sortOrder
+
+        -- Subtask 4: Pagination
+        totalFiltered =
+            List.length filteredReports
+
+        startIndex =
+            (history.currentPage - 1) * history.itemsPerPage
+
+        paginatedReports =
+            filteredReports
+                |> List.drop startIndex
+                |> List.take history.itemsPerPage
+    in
     div [ class "page test-history" ]
         [ h2 [] [ text "Test History" ]
-        , p [] [ text "Test history list will be implemented here." ]
+        , -- Subtask 3: Filtering and Sorting Controls
+          viewHistoryControls history
+        , -- Loading/Error States
+          if history.loading then
+            div [ class "loading" ] [ text "Loading test history..." ]
+
+          else
+            case history.error of
+                Just errorMsg ->
+                    div [ class "error" ] [ text ("Error: " ++ errorMsg) ]
+
+                Nothing ->
+                    if List.isEmpty filteredReports then
+                        div [ class "empty-state" ] [ text "No tests found matching your filters." ]
+
+                    else
+                        div []
+                            [ -- Subtask 2: History Table
+                              viewHistoryTable paginatedReports history
+                            , -- Subtask 4: Pagination Controls
+                              viewHistoryPagination history totalFiltered
+                            ]
         ]
+
+
+{-| Subtask 3: Filter and Sort Controls -}
+viewHistoryControls : TestHistoryState -> Html Msg
+viewHistoryControls history =
+    div [ class "history-controls" ]
+        [ div [ class "history-filters" ]
+            [ -- URL Search
+              div [ class "filter-group" ]
+                [ label [] [ text "Search URL:" ]
+                , input
+                    [ type_ "text"
+                    , placeholder "Filter by game URL..."
+                    , value history.urlSearchQuery
+                    , onInput UpdateUrlSearch
+                    , class "url-search-input"
+                    ]
+                    []
+                ]
+            , -- Status Filter
+              div [ class "filter-group" ]
+                [ label [] [ text "Status:" ]
+                , select [ onInput UpdateStatusFilter, class "status-filter" ]
+                    [ option [ value "" ] [ text "All" ]
+                    , option [ value "completed" ] [ text "Completed" ]
+                    , option [ value "failed" ] [ text "Failed" ]
+                    , option [ value "running" ] [ text "Running" ]
+                    ]
+                ]
+            ]
+        , -- Sorting Controls
+          div [ class "history-sorting" ]
+            [ label [] [ text "Sort by:" ]
+            , div [ class "sort-buttons" ]
+                [ viewSortButton history.sortBy SortByTimestamp "Timestamp"
+                , viewSortButton history.sortBy SortByScore "Score"
+                , viewSortButton history.sortBy SortByDuration "Duration"
+                , viewSortButton history.sortBy SortByStatus "Status"
+                ]
+            , button
+                [ class "sort-order-btn"
+                , onClick ToggleSortOrder
+                ]
+                [ text
+                    (case history.sortOrder of
+                        Ascending ->
+                            "↑ Ascending"
+
+                        Descending ->
+                            "↓ Descending"
+                    )
+                ]
+            ]
+        ]
+
+
+viewSortButton : SortField -> SortField -> String -> Html Msg
+viewSortButton currentSort field label =
+    button
+        [ class
+            ("sort-btn"
+                ++ (if currentSort == field then
+                        " active"
+
+                    else
+                        ""
+                   )
+            )
+        , onClick (ChangeSortField field)
+        ]
+        [ text label ]
+
+
+{-| Subtask 2: History Table -}
+viewHistoryTable : List ReportSummary -> TestHistoryState -> Html Msg
+viewHistoryTable reports history =
+    div [ class "history-table-container" ]
+        [ table [ class "history-table" ]
+            [ thead []
+                [ tr []
+                    [ th [] [ text "Timestamp" ]
+                    , th [] [ text "Game URL" ]
+                    , th [] [ text "Status" ]
+                    , th [] [ text "Score" ]
+                    , th [] [ text "Duration" ]
+                    , th [] [ text "Actions" ]
+                    ]
+                ]
+            , tbody []
+                (List.map viewHistoryRow reports)
+            ]
+        ]
+
+
+viewHistoryRow : ReportSummary -> Html Msg
+viewHistoryRow report =
+    tr
+        [ class ("history-row status-" ++ report.status)
+        , onClick (NavigateToReport report.reportId)
+        ]
+        [ td [ class "timestamp-cell" ] [ text (formatTimestamp report.timestamp) ]
+        , td [ class "url-cell" ] [ text (truncateUrl report.gameUrl 50) ]
+        , td []
+            [ span [ class ("status-badge status-" ++ report.status) ]
+                [ text (String.toUpper report.status) ]
+            ]
+        , td [ class "score-cell" ]
+            [ case report.overallScore of
+                Just score ->
+                    span [ class ("score-value score-" ++ scoreClass score) ]
+                        [ text (String.fromInt score ++ "/100") ]
+
+                Nothing ->
+                    span [ class "score-na" ] [ text "N/A" ]
+            ]
+        , td [ class "duration-cell" ] [ text (formatDuration report.duration) ]
+        , td [ class "actions-cell" ]
+            [ button
+                [ class "view-report-btn"
+                , onClick (NavigateToReport report.reportId)
+                ]
+                [ text "View Report" ]
+            ]
+        ]
+
+
+{-| Subtask 4: Pagination Controls -}
+viewHistoryPagination : TestHistoryState -> Int -> Html Msg
+viewHistoryPagination history totalItems =
+    let
+        totalPages =
+            ceiling (toFloat totalItems / toFloat history.itemsPerPage)
+
+        startItem =
+            (history.currentPage - 1) * history.itemsPerPage + 1
+
+        endItem =
+            Basics.min (history.currentPage * history.itemsPerPage) totalItems
+
+        canGoPrevious =
+            history.currentPage > 1
+
+        canGoNext =
+            history.currentPage < totalPages
+    in
+    div [ class "history-pagination" ]
+        [ div [ class "pagination-info" ]
+            [ text ("Showing " ++ String.fromInt startItem ++ "-" ++ String.fromInt endItem ++ " of " ++ String.fromInt totalItems ++ " tests")
+            ]
+        , div [ class "pagination-controls" ]
+            [ button
+                [ class "pagination-btn"
+                , onClick (ChangeHistoryPage 1)
+                , disabled (not canGoPrevious)
+                ]
+                [ text "First" ]
+            , button
+                [ class "pagination-btn"
+                , onClick (ChangeHistoryPage (history.currentPage - 1))
+                , disabled (not canGoPrevious)
+                ]
+                [ text "◀ Previous" ]
+            , span [ class "page-indicator" ]
+                [ text ("Page " ++ String.fromInt history.currentPage ++ " of " ++ String.fromInt totalPages) ]
+            , button
+                [ class "pagination-btn"
+                , onClick (ChangeHistoryPage (history.currentPage + 1))
+                , disabled (not canGoNext)
+                ]
+                [ text "Next ▶" ]
+            , button
+                [ class "pagination-btn"
+                , onClick (ChangeHistoryPage totalPages)
+                , disabled (not canGoNext)
+                ]
+                [ text "Last" ]
+            ]
+        ]
+
+
+{-| Helper: Filter by status -}
+filterByStatus : Maybe String -> List ReportSummary -> List ReportSummary
+filterByStatus maybeStatus reports =
+    case maybeStatus of
+        Nothing ->
+            reports
+
+        Just status ->
+            List.filter (\r -> r.status == status) reports
+
+
+{-| Helper: Filter by URL search -}
+filterByUrlSearch : String -> List ReportSummary -> List ReportSummary
+filterByUrlSearch query reports =
+    if String.isEmpty query then
+        reports
+
+    else
+        let
+            lowerQuery =
+                String.toLower query
+        in
+        List.filter (\r -> String.contains lowerQuery (String.toLower r.gameUrl)) reports
+
+
+{-| Helper: Sort reports -}
+sortReports : SortField -> SortOrder -> List ReportSummary -> List ReportSummary
+sortReports field order reports =
+    let
+        sortedReports =
+            case field of
+                SortByTimestamp ->
+                    List.sortBy .timestamp reports
+
+                SortByScore ->
+                    List.sortBy (\r -> r.overallScore |> Maybe.withDefault 0) reports
+
+                SortByDuration ->
+                    List.sortBy .duration reports
+
+                SortByStatus ->
+                    List.sortBy .status reports
+    in
+    case order of
+        Ascending ->
+            sortedReports
+
+        Descending ->
+            List.reverse sortedReports
+
+
+{-| Helper: Format timestamp -}
+formatTimestamp : String -> String
+formatTimestamp timestamp =
+    -- Simple formatting, can be enhanced with time library
+    String.left 19 timestamp
+
+
+{-| Helper: Truncate URL -}
+truncateUrl : String -> Int -> String
+truncateUrl url maxLength =
+    if String.length url > maxLength then
+        String.left maxLength url ++ "..."
+
+    else
+        url
 
 
 viewNotFound : Html Msg

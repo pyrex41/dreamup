@@ -1059,7 +1059,7 @@
         "dependencies": [
           "4"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -1104,7 +1104,8 @@
         ],
         "complexity": 6,
         "recommendedSubtasks": 0,
-        "expansionPrompt": "No expansion needed as subtasks include API fetching, table component, sorting/filtering, and pagination."
+        "expansionPrompt": "No expansion needed as subtasks include API fetching, table component, sorting/filtering, and pagination.",
+        "updatedAt": "2025-11-03T22:28:31.171Z"
       },
       {
         "id": "8",
@@ -1189,9 +1190,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-11-03T22:20:57.881Z",
+      "lastModified": "2025-11-03T22:28:31.171Z",
       "taskCount": 8,
-      "completedCount": 6,
+      "completedCount": 7,
       "tags": [
         "elm"
       ]
