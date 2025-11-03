@@ -692,5 +692,118 @@
         "master"
       ]
     }
+  },
+  "elm": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Set up Elm Project Structure and Dependencies",
+        "description": "Initialize the Elm project with required dependencies and basic application structure using Elm 0.19.1, Vite or webpack, and specified packages like elm/http, elm/json, etc.",
+        "details": "Create a new Elm project using elm init. Install dependencies: elm/core, elm/html, elm/http, elm/json, elm/browser, elm/url, elm/time, justinmimbs/time-extra, elm-community/list-extra. Set up build tool (Vite with elm-vite plugin or webpack with elm-loader). Define the basic Elm Architecture with Model, Msg, and update/view functions. Implement routing using elm/browser with Browser.application. Include CORS handling for API requests.",
+        "testStrategy": "Verify project compiles without errors. Check that all dependencies are installed and importable. Run elm make to ensure no compilation issues. Test basic app initialization in browser.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 2,
+        "title": "Implement Test Submission Interface",
+        "description": "Build the form for submitting a game URL to initiate a test, including validation and optional settings.",
+        "details": "Create a form with a single URL input field using elm/html. Add client-side validation for HTTP/HTTPS URLs using elm/url. Include optional advanced settings: timeout slider (60-300s, default 280), metadata key-value pairs, S3 upload toggle. Use elm/http to send POST request to /api/tests with JSON payload. Handle loading state on submit button. Display estimated completion time after submission. Pseudo-code: type Msg = SubmitTest String; update msg model = case msg of SubmitTest url -> (model, Http.post { url = '/api/tests', body = encodeTestRequest url, expect = expectJson TestResponse decoder })",
+        "testStrategy": "Test URL validation with valid/invalid inputs. Verify form submission sends correct JSON to API. Check loading state and error handling for invalid URLs or network failures. Use Elm debugger to inspect model updates.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 3,
+        "title": "Add Test Execution Status Tracking",
+        "description": "Implement real-time feedback for test execution, including status indicators and progress updates.",
+        "details": "Add status phases (Initializing, Loading game, etc.) with progress bar and elapsed time counter. Use polling (every 2-3 seconds) via GET /api/tests/{test_id} or WebSocket if available. Store test state in localStorage for resilience. Include cancel button if feasible. Pseudo-code: type alias Model = { testId : Maybe String, status : String, progress : Int }; update msg model = case msg of PollStatus -> (model, Http.get { url = '/api/tests/' ++ model.testId, expect = expectJson StatusUpdate decoder })",
+        "testStrategy": "Simulate test execution by mocking API responses. Verify status updates in UI (spinner, progress bar). Test localStorage persistence on page refresh. Check polling interval and error handling for failed requests.",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Implement Report Display",
+        "description": "Create the comprehensive view for displaying test reports, including summary, metrics, issues, and actions.",
+        "details": "Build report view with header (status badge, score, duration, etc.), evaluation metrics (progress bars for scores), collapsible issues/recommendations, AI reasoning section. Use elm/json for decoding Report type. Include actions: share link, download JSON, re-run. Color-code scores (red/yellow/green). Pseudo-code: viewReport report = div [] [ h1 [] [text report.summary.status], div [] [text (\"Score: \" ++ String.fromInt report.score.overallScore)] ]",
+        "testStrategy": "Load sample report JSON and verify all fields render correctly. Test collapsible sections and color gradients. Check action buttons (copy to clipboard, download). Validate with different score ranges and statuses.",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Add Screenshot Viewer",
+        "description": "Develop the visual comparison tool for screenshots with side-by-side, overlay, and difference modes.",
+        "details": "Implement lazy loading of images from S3 URLs. Create side-by-side view, overlay with slider, and difference mode using canvas API. Add zoom controls (fit, 100%, 200%), full-screen mode, and download options. Display metadata (timestamp, resolution). Pseudo-code: viewScreenshots screenshots = div [] [ img [src screenshots.initial.s3Url] [], img [src screenshots.final.s3Url] [] ]",
+        "testStrategy": "Test with sample images; verify lazy loading and modes switch correctly. Check zoom and full-screen functionality. Ensure metadata displays and downloads work. Test on different screen sizes.",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Implement Console Log Viewer",
+        "description": "Build a filterable and searchable viewer for browser console logs with summary statistics.",
+        "details": "Display logs with timestamp, level badge, message, source. Add filters (level toggles, search with debouncing 300ms), summary stats (total, errors, warnings). Use virtual scrolling for performance. Export as JSON/text. Syntax highlight stack traces. Pseudo-code: viewLogs logs = ul [] (List.map viewLog logs); viewLog log = li [] [ span [] [text log.level], text log.message ]",
+        "testStrategy": "Load large log dataset (10,000+ entries) and verify rendering without freezing. Test filters and search highlighting. Check export functionality and statistics accuracy. Validate syntax highlighting.",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "Add Test History and Search",
+        "description": "Create a paginated list of historical tests with sorting, filtering, and navigation to reports.",
+        "details": "Fetch reports via GET /api/reports with query params. Implement table with status, URL, score, etc. Add sorting (timestamp, score), filters (status, date range, URL search), pagination. Click rows to navigate to report view. Pseudo-code: type alias HistoryModel = { reports : List ReportSummary, page : Int }; update msg model = case msg of LoadHistory -> (model, Http.get { url = '/api/reports?page=' ++ String.fromInt model.page, expect = expectJson ReportsResponse decoder })",
+        "testStrategy": "Mock API responses for multiple pages. Verify sorting and filtering work. Test pagination controls and row clicks navigate correctly. Check performance with large lists.",
+        "priority": "medium",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Polish UI/UX, Error Handling, and Deployment",
+        "description": "Enhance styling, add accessibility, handle edge cases, and prepare for deployment as a static site.",
+        "details": "Apply color palette, typography, and responsive layout (max 1280px, breakpoints). Ensure WCAG 2.1 AA compliance. Add error handling for network failures, retries with backoff. Implement offline indication and state persistence. Optimize performance (lazy loading, virtual scrolling). Deploy as static site to S3/CloudFront.",
+        "testStrategy": "Conduct accessibility audit (color contrast, keyboard nav). Test cross-browser compatibility. Simulate network errors and verify graceful degradation. Measure load times (<2s initial, <3s report). Validate deployment and static hosting.",
+        "priority": "low",
+        "dependencies": [
+          5,
+          6,
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-11-03T21:05:10.421Z",
+      "updated": "2025-11-03T21:05:10.421Z",
+      "description": "Tasks for elm context"
+    }
   }
 }
