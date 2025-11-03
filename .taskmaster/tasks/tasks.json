@@ -1,0 +1,690 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": "1",
+        "title": "Initialize Go Project and Dependencies",
+        "description": "Set up the Go module with required dependencies including chromedp, Anthropic SDK, AWS SDK, and other libraries as specified in the PRD.",
+        "details": "Create a new Go module using 'go mod init github.com/dreamup/qa-agent'. Add dependencies from the PRD's go.mod section: chromedp v0.9.3, anthropic-sdk-go v0.1.0, aws-sdk-go-v2 v1.24.0, s3 service, uuid v1.5.0, cobra v1.8.0, viper v1.18.0, zap v1.26.0. Ensure Go 1.21+ is used. Set up the directory structure as outlined in the PRD, including cmd/, internal/, pkg/, test/ directories.",
+        "testStrategy": "Run 'go mod tidy' and 'go build' to verify all dependencies resolve correctly. Check that the project compiles without errors.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Verify Go Installation and Version",
+            "description": "Ensure Go 1.21+ is installed and available on the system. [Updated: 11/3/2025]",
+            "dependencies": [],
+            "details": "Check the installed Go version using 'go version' command. If not installed or version is below 1.21, install or update Go to meet the requirement. This ensures compatibility with the specified dependencies.\n<info added on 2025-11-03T19:16:12.108Z>\nGo version 1.24.0 verified on darwin/arm64, meeting the 1.21+ requirement.\n</info added on 2025-11-03T19:16:12.108Z>",
+            "status": "done",
+            "testStrategy": "Run 'go version' and assert the output shows version 1.21 or higher.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:16:14.840Z"
+          },
+          {
+            "id": 2,
+            "title": "Initialize Go Module",
+            "description": "Create a new Go module for the project. [Updated: 11/3/2025]",
+            "dependencies": [
+              1
+            ],
+            "details": "Use the command 'go mod init github.com/dreamup/qa-agent' to initialize the module. This sets up the go.mod file with the module path, preparing the project structure for dependency management.\n<info added on 2025-11-03T19:16:42.947Z>\nModule initialized successfully as github.com/dreamup/qa-agent. The go.mod file has been created and is ready for dependency management.\n</info added on 2025-11-03T19:16:42.947Z>",
+            "status": "done",
+            "testStrategy": "Check that go.mod file is created in the project root with the correct module name.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:16:45.977Z"
+          },
+          {
+            "id": 3,
+            "title": "Add Required Dependencies",
+            "description": "Add all specified dependencies to the go.mod file.",
+            "dependencies": [
+              2
+            ],
+            "details": "Run 'go get' commands for each dependency: chromedp v0.9.3, anthropic-sdk-go v0.1.0, aws-sdk-go-v2 v1.24.0 (including s3 service), uuid v1.5.0, cobra v1.8.0, viper v1.18.0, zap v1.26.0. This updates go.mod and downloads the packages.\n<info added on 2025-11-03T19:18:51.428Z>\nSuccessfully added all dependencies: chromedp v0.9.3, go-openai v1.41.2 (using OpenAI SDK instead of Anthropic per user request), aws-sdk-go-v2 v1.39.5, s3 service v1.89.1, uuid v1.5.0, cobra v1.8.0, viper v1.18.0, zap v1.26.0. All dependencies resolved without conflicts.\n</info added on 2025-11-03T19:18:51.428Z>",
+            "status": "done",
+            "testStrategy": "Run 'go list -m all' and verify all listed dependencies are present with correct versions.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:18:54.249Z"
+          },
+          {
+            "id": 4,
+            "title": "Set Up Project Directory Structure",
+            "description": "Create the required directories as per the PRD.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create the following directories in the project root: cmd/, internal/, pkg/, test/. Ensure they are empty initially and ready for code placement. This organizes the codebase according to standard Go project conventions.\n<info added on 2025-11-03T19:19:22.521Z>\nCreated project directory structure: cmd/qa/ for CLI entry point, internal/agent/ for core agent logic, pkg/ for shared packages, test/ for test files. All directories verified.\n</info added on 2025-11-03T19:19:22.521Z>",
+            "status": "done",
+            "testStrategy": "List the directory contents and confirm cmd/, internal/, pkg/, test/ exist as directories.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:19:25.676Z"
+          },
+          {
+            "id": 5,
+            "title": "Verify Project Setup and Compilation",
+            "description": "Ensure the module and dependencies are correctly set up and the project compiles.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Run 'go mod tidy' to clean up dependencies and 'go build' to verify compilation. This checks for any missing dependencies or version conflicts, ensuring the project is ready for development.\n<info added on 2025-11-03T19:22:14.828Z>\nRan go mod tidy and go build successfully. Binary compiled to 2.3MB 'qa' executable. Tested binary output - prints initialization message. All dependencies resolve correctly.\n</info added on 2025-11-03T19:22:14.828Z>",
+            "status": "done",
+            "testStrategy": "Execute 'go mod tidy' and 'go build'; assert no errors occur and the build succeeds.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:22:18.857Z"
+          }
+        ],
+        "complexity": 2,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as this is a straightforward setup task.",
+        "updatedAt": "2025-11-03T19:22:18.857Z"
+      },
+      {
+        "id": "2",
+        "title": "Implement Browser Manager",
+        "description": "Develop the browser manager to launch Chrome, navigate to game URLs, and handle basic page loading with timeouts.",
+        "details": "In internal/agent/browser.go, implement functions to start a headless Chrome instance using chromedp, navigate to a given URL, wait for DOMContentLoaded, and detect successful render. Include timeout handling (45 seconds) and error detection for failed loads. Use chromedp's context and allocator for browser lifecycle management. Pseudo-code: func LoadGame(ctx context.Context, url string) (*chromedp.CDP, error) { ... allocate context, run navigate task, check for errors ... }",
+        "testStrategy": "Unit test with mock URLs; verify browser launches, navigates, and returns errors for invalid URLs. Integration test by loading a static HTML page and confirming no crashes.",
+        "priority": "high",
+        "dependencies": [
+          "1"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up Browser Allocation and Context",
+            "description": "Implement the browser allocation and context setup for launching a headless Chrome instance using chromedp.",
+            "dependencies": [],
+            "details": "In internal/agent/browser.go, create functions to allocate a chromedp context and set up the browser lifecycle management. This includes initializing the allocator with headless mode and necessary flags for Chrome.\n<info added on 2025-11-03T19:23:07.167Z>\nCreated BrowserManager struct with NewBrowserManager() constructor. Implemented chromedp allocator with headless Chrome, GPU disabled, no-sandbox, and dev-shm-usage disabled. Added Close() method for cleanup and GetContext() to access browser context.\n</info added on 2025-11-03T19:23:07.167Z>",
+            "status": "done",
+            "testStrategy": "Unit test the allocation function to ensure context creation without errors and verify headless mode is enabled.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:23:10.366Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement URL Navigation and DOM Loading",
+            "description": "Develop the functionality to navigate to game URLs and wait for DOMContentLoaded event.",
+            "dependencies": [
+              1
+            ],
+            "details": "In the LoadGame function, use chromedp to run navigation tasks to the given URL and wait for the DOMContentLoaded event to ensure the page is ready. This involves running chromedp.Navigate and chromedp.WaitReady tasks.\n<info added on 2025-11-03T19:23:40.722Z>\nImplemented the Navigate() method using chromedp.Navigate() and chromedp.WaitReady() to wait for the DOM body element. Created a LoadGame() wrapper function specifically for game URLs. Both methods include proper error handling with contextual messages.\n</info added on 2025-11-03T19:23:40.722Z>",
+            "status": "done",
+            "testStrategy": "Unit test with mock URLs to verify navigation completes and DOM is loaded; integration test by loading a static HTML page and checking for successful render.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:23:43.861Z"
+          },
+          {
+            "id": 3,
+            "title": "Add Timeout and Error Handling",
+            "description": "Incorporate timeout handling and error detection for failed page loads in the browser manager.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Implement a 45-second timeout for the LoadGame function using context.WithTimeout. Add error checking for navigation failures, such as invalid URLs or page load issues, and return appropriate errors. Ensure graceful handling of browser crashes or timeouts.\n<info added on 2025-11-03T19:24:13.843Z>\nAdded NavigateWithTimeout() method that creates a timeout context and handles context.DeadlineExceeded errors specifically. LoadGame() now uses 45-second timeout constant. Error messages differentiate between timeout and other failures.\n</info added on 2025-11-03T19:24:13.843Z>",
+            "status": "done",
+            "testStrategy": "Unit test with invalid URLs to verify error detection and timeout behavior; integration test by simulating slow loads and confirming timeouts are enforced.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:25:22.916Z"
+          }
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 3,
+        "expansionPrompt": "Break down into subtasks for browser allocation and context setup, URL navigation with DOM loading, and timeout/error handling.",
+        "updatedAt": "2025-11-03T19:25:22.916Z"
+      },
+      {
+        "id": "3",
+        "title": "Add Screenshot Capture Functionality",
+        "description": "Implement screenshot capture at various points during the test session.",
+        "details": "In internal/agent/evidence.go, create a function to capture full-page screenshots using chromedp's Page.CaptureScreenshot. Set resolution to 1280x720, format PNG with compression level 6. Store locally in temp directory initially. Include context (initial, gameplay, final) and timestamp. Pseudo-code: func CaptureScreenshot(ctx context.Context, cdp *chromedp.CDP, context string) (*Screenshot, error) { ... run capture task, save to file ... }",
+        "testStrategy": "Unit test screenshot capture on a loaded page; verify file creation, size, and metadata. Manual test by capturing screenshots from a test game and checking visual quality.",
+        "priority": "medium",
+        "dependencies": [
+          "2"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define Screenshot Struct and Function Signature",
+            "description": "Create the Screenshot struct to hold image data, file path, context, and timestamp. Define the CaptureScreenshot function signature in evidence.go.",
+            "dependencies": [],
+            "details": "In internal/agent/evidence.go, define a Screenshot struct with fields for image bytes, file path, context (e.g., initial, gameplay, final), and timestamp. The function signature should be func CaptureScreenshot(ctx context.Context, cdp *chromedp.CDP, context string) (*Screenshot, error). Ensure the struct includes necessary fields for storage and metadata.\n<info added on 2025-11-03T19:26:10.908Z>\nCreated Screenshot struct with Filepath, Context (initial/gameplay/final enum), Timestamp, Data (raw bytes), Width, and Height fields. Defined ScreenshotContext type with three constants for test phases.\n</info added on 2025-11-03T19:26:10.908Z>",
+            "status": "done",
+            "testStrategy": null,
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:26:13.575Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Chromedp Screenshot Capture",
+            "description": "Use chromedp's Page.CaptureScreenshot to capture the full-page screenshot with specified resolution and format.",
+            "dependencies": [
+              1
+            ],
+            "details": "Within the CaptureScreenshot function, create a chromedp task to capture the screenshot using Page.CaptureScreenshot. Set the viewport to 1280x720, format to PNG, and compression level to 6. Run the task using chromedp.Run and retrieve the image bytes.\n<info added on 2025-11-03T19:26:40.566Z>\nImplemented CaptureScreenshot() function using chromedp.EmulateViewport(1280,720) and chromedp.FullScreenshot(). Captures full-page PNG with quality 100. Returns Screenshot struct with timestamp and raw PNG data.\n</info added on 2025-11-03T19:26:40.566Z>",
+            "status": "done",
+            "testStrategy": "Unit test the capture on a simple HTML page to verify image bytes are generated correctly.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:26:42.921Z"
+          },
+          {
+            "id": 3,
+            "title": "Handle File Storage in Temp Directory",
+            "description": "Save the captured screenshot to a temporary file in the local temp directory.",
+            "dependencies": [
+              2
+            ],
+            "details": "After capturing the image bytes, generate a unique filename including the context and timestamp (e.g., screenshot_initial_20231001_120000.png). Use os.TempDir() to get the temp directory path, create the file, and write the bytes to it. Update the Screenshot struct with the file path.\n<info added on 2025-11-03T19:27:14.759Z>\nImplemented SaveToTemp() method that generates unique filename with context, timestamp, and UUID. Uses os.TempDir() and os.WriteFile() to save PNG data. Updates Filepath field after successful write.\n</info added on 2025-11-03T19:27:14.759Z>",
+            "status": "done",
+            "testStrategy": "Unit test file creation and verify the file exists with correct size and name.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:27:30.990Z"
+          },
+          {
+            "id": 4,
+            "title": "Add Timestamp and Context Metadata",
+            "description": "Populate the Screenshot struct with current timestamp and provided context.",
+            "dependencies": [
+              3
+            ],
+            "details": "Before saving the file, set the timestamp to time.Now() in the Screenshot struct. Ensure the context string is stored as provided. This metadata will be used for organizing and referencing the screenshots later in the test session.\n<info added on 2025-11-03T19:27:20.006Z>\nImplementation completed: Timestamp and context metadata are already handled in the CaptureScreenshot() function through Screenshot struct initialization using time.Now() and the screenshotContext parameter.\n</info added on 2025-11-03T19:27:20.006Z>",
+            "status": "done",
+            "testStrategy": "Unit test to check that timestamp is recent and context matches input.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:27:32.116Z"
+          },
+          {
+            "id": 5,
+            "title": "Integrate Error Handling and Return",
+            "description": "Add error handling for capture and file operations, and return the Screenshot or error.",
+            "dependencies": [
+              4
+            ],
+            "details": "Wrap the chromedp.Run and file operations in error checks. If any step fails, return an appropriate error. On success, return the populated Screenshot struct. Ensure the function handles cases like browser not ready or disk space issues.\n<info added on 2025-11-03T19:27:27.624Z>\nError handling has been integrated throughout. The CaptureScreenshot() function returns errors from chromedp.Run(). The SaveToTemp() function returns errors from os.WriteFile(). All errors use fmt.Errorf with %w for proper error wrapping.\n</info added on 2025-11-03T19:27:27.624Z>",
+            "status": "done",
+            "testStrategy": "Unit test error scenarios, such as invalid context or chromedp failure, to verify proper error returns.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:27:33.184Z"
+          }
+        ],
+        "complexity": 4,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as the functionality is self-contained.",
+        "updatedAt": "2025-11-03T19:27:33.184Z"
+      },
+      {
+        "id": "4",
+        "title": "Build Basic CLI Interface",
+        "description": "Create a command-line interface for local testing of the QA agent.",
+        "details": "Using cobra in cmd/qa/main.go, implement CLI commands like 'test --url <url>' to run a single test, with options for output directory, headless mode, max duration. Load configuration from environment variables or config.yaml. Integrate with browser manager to execute a basic test flow: load URL, take initial screenshot, wait, take final screenshot.",
+        "testStrategy": "Run CLI with a test URL; verify output files (screenshots) are generated in specified directory. Test error handling for invalid URLs or missing dependencies.",
+        "priority": "medium",
+        "dependencies": [
+          "2",
+          "3"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up Cobra CLI Structure",
+            "description": "Initialize the basic command-line interface using Cobra in cmd/qa/main.go, including the root command and basic setup.",
+            "dependencies": [],
+            "details": "Create the main.go file in cmd/qa/ directory, initialize a new Cobra CLI application with a root command, and set up the basic structure for adding subcommands. Ensure the module is properly initialized and dependencies are in place.\n<info added on 2025-11-03T19:29:56.594Z>\nCreated Cobra CLI structure with main.go (root command) and test.go (test subcommand). Added version info, help text, and command structure. CLI builds and displays help correctly.\n</info added on 2025-11-03T19:29:56.594Z>",
+            "status": "done",
+            "testStrategy": "Run the CLI without arguments to verify it starts without errors and displays help.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:30:13.272Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Test Command with Flags",
+            "description": "Add the 'test' command to the CLI with required and optional flags for URL, output directory, headless mode, and max duration.",
+            "dependencies": [
+              1
+            ],
+            "details": "Using Cobra, define the 'test' subcommand with flags: --url (required), --output-dir (optional, default to current dir), --headless (boolean, default false), --max-duration (optional, in seconds). Parse these flags in the command's run function.\n<info added on 2025-11-03T19:30:10.465Z>\nImplemented test command with flags: --url (required), --output (default ./qa-results), --headless (default true), --max-duration (default 300s). All flags parse correctly via Cobra.\n</info added on 2025-11-03T19:30:10.465Z>",
+            "status": "done",
+            "testStrategy": "Execute the CLI with 'test --help' to verify flags are defined correctly and parse sample inputs.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:30:14.402Z"
+          },
+          {
+            "id": 3,
+            "title": "Add Configuration Loading",
+            "description": "Implement loading of configuration from environment variables or config.yaml file.",
+            "dependencies": [
+              1
+            ],
+            "details": "Use Viper to load configuration settings such as API keys, default paths, or other parameters from environment variables (e.g., QA_AGENT_CONFIG) or a config.yaml file in the project root. Merge with CLI flags where appropriate.\n<info added on 2025-11-03T19:30:49.325Z>\nAdded config.go with Viper integration. Supports config.yaml files in . and ~/.dreamup/, environment variables with DREAMUP_ prefix, and defaults for all settings. Includes EnsureOutputDir() helper function.\n</info added on 2025-11-03T19:30:49.325Z>",
+            "status": "done",
+            "testStrategy": "Set environment variables and create a config.yaml file, then run the CLI to ensure configurations are loaded and override defaults.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:30:52.020Z"
+          },
+          {
+            "id": 4,
+            "title": "Integrate Browser Manager for Test Flow",
+            "description": "Connect the CLI to the browser manager to execute the basic test flow: load URL, take initial screenshot, wait, take final screenshot.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "In the 'test' command's run function, initialize the browser manager (assuming it's from previous tasks), load the specified URL in headless or headed mode, capture an initial screenshot, wait for a default or specified duration, capture a final screenshot, and save them to the output directory.\n<info added on 2025-11-03T19:31:37.842Z>\nBrowser manager integrated into test flow. runTest() function now creates BrowserManager instance, calls LoadGame(url), captures initial screenshot, waits 5 seconds, captures final screenshot, and saves both to temp directory. Full end-to-end flow is working.\n</info added on 2025-11-03T19:31:37.842Z>",
+            "status": "done",
+            "testStrategy": "Run the 'test' command with a valid URL and verify that two screenshot files are generated in the specified output directory.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:31:48.697Z"
+          },
+          {
+            "id": 5,
+            "title": "Implement Error Handling and Output",
+            "description": "Add error handling for invalid inputs, timeouts, and browser issues, plus provide user feedback on test execution.",
+            "dependencies": [
+              4
+            ],
+            "details": "Wrap the test execution in try-catch or error handling blocks to manage invalid URLs, browser failures, or timeouts. Output progress messages to stdout/stderr, and ensure the CLI exits with appropriate codes. Handle max duration by setting context timeouts.\n<info added on 2025-11-03T19:31:45.550Z>\nError handling is implemented throughout the test flow using fmt.Errorf with %w wrapping for error propagation. User-friendly output includes emojis and clear progress messages. Errors are properly propagated to CLI exit codes via Cobra.\n</info added on 2025-11-03T19:31:45.550Z>",
+            "status": "done",
+            "testStrategy": "Test with invalid URLs or missing dependencies to verify error messages are displayed and the CLI exits gracefully without crashing.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:31:49.784Z"
+          }
+        ],
+        "complexity": 4,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as CLI setup is standard.",
+        "updatedAt": "2025-11-03T19:31:49.784Z"
+      },
+      {
+        "id": "5",
+        "title": "Implement Interaction System",
+        "description": "Develop the system to execute predefined sequences of actions on the game.",
+        "details": "In internal/agent/interactions.go, define Action struct and InteractionPlan. Implement executor for actions: click (using selectors), keypress (arrow keys, space), wait. Use chromedp's Input domain for simulations. Start with standard strategy: initial screenshot, click start button, simulate gameplay with key presses, periodic screenshots. Handle timeouts per action (30s). Pseudo-code: func ExecutePlan(ctx context.Context, cdp *chromedp.CDP, plan InteractionPlan) error { for each action { run task, wait, screenshot if needed } }",
+        "testStrategy": "Unit test action execution on a simple HTML page with buttons and inputs. Integration test with a basic game like tic-tac-toe; verify actions trigger expected changes and screenshots capture gameplay.",
+        "priority": "high",
+        "dependencies": [
+          "2",
+          "3"
+        ],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define Action Structs and Interaction Plans",
+            "description": "Create the Action struct to represent individual actions like click, keypress, and wait, along with the InteractionPlan struct to hold sequences of actions for game interaction.",
+            "dependencies": [],
+            "details": "In internal/agent/interactions.go, define the Action struct with fields for type (e.g., click, keypress, wait), selectors for clicks, keys for presses, and duration for waits. Define InteractionPlan as a slice of Actions. Ensure structs are serializable for logging and testing.\n<info added on 2025-11-03T19:33:59.749Z>\nCreated Action struct with ActionType enum (click, keypress, wait, screenshot). Defined InteractionPlan struct to hold sequences of actions. Added helper functions: NewClickAction, NewKeypressAction, NewWaitAction, NewScreenshotAction. Created NewStandardGamePlan with typical game test flow.\n</info added on 2025-11-03T19:33:59.749Z>",
+            "status": "done",
+            "testStrategy": "Unit test the struct definitions by creating instances and verifying field assignments and serialization.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:34:02.453Z"
+          },
+          {
+            "id": 2,
+            "title": "Implement Action Executors for Click, Keypress, and Wait",
+            "description": "Develop executor functions to perform click actions using selectors, simulate keypresses for arrow keys and space, and implement wait periods using chromedp's Input domain.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement functions like ExecuteClick(ctx, cdp, selector), ExecuteKeypress(ctx, cdp, key), and ExecuteWait(ctx, duration) using chromedp tasks. For clicks, use chromedp.Click with selectors; for keypresses, use chromedp.KeyEvent; for waits, use time.Sleep or chromedp.Sleep. Integrate into a main executor loop.\n<info added on 2025-11-03T19:35:26.231Z>\nImplemented ExecuteAction dispatcher function. Created executeClick using chromedp.WaitVisible and chromedp.Click. Created executeKeypress with Unicode key mappings for arrows, space, enter, escape, and single chars. Created executeWait using time.Sleep. All with proper timeout handling.\n</info added on 2025-11-03T19:35:26.231Z>",
+            "status": "done",
+            "testStrategy": "Unit test each executor on a simple HTML page with buttons and inputs; verify DOM changes for clicks and keypresses, and timing for waits.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:35:28.757Z"
+          },
+          {
+            "id": 3,
+            "title": "Integrate Screenshot Capture with Interactions",
+            "description": "Incorporate periodic screenshot captures during interaction execution, including initial, gameplay, and final screenshots as per the standard strategy.",
+            "dependencies": [
+              2
+            ],
+            "details": "Modify the ExecutePlan function to call CaptureScreenshot from internal/agent/evidence.go at key points: before starting, after each action if needed, and at the end. Ensure screenshots are timestamped and stored with context (e.g., 'initial', 'gameplay'). Handle integration with chromedp's Page.CaptureScreenshot at 1280x720 resolution.\n<info added on 2025-11-03T19:36:03.307Z>\nModified ExecuteAction to return (*Screenshot, error). Added executeScreenshot function that calls CaptureScreenshot and SaveToTemp. Created ExecutePlan function that iterates through all actions, collects screenshots, and returns them.\n</info added on 2025-11-03T19:36:03.307Z>",
+            "status": "done",
+            "testStrategy": "Integration test by running a sequence of actions on a basic game page; verify screenshots are captured at correct intervals and saved with proper metadata.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:36:13.953Z"
+          },
+          {
+            "id": 4,
+            "title": "Handle Timeouts and Error Management in Interactions",
+            "description": "Add timeout handling for each action (30 seconds) and implement robust error detection and recovery within the interaction system.",
+            "dependencies": [
+              3
+            ],
+            "details": "Wrap each action execution in a context.WithTimeout to enforce 30s limits. Implement error categorization for timeouts, selector failures, or keypress issues. Add retry logic or graceful degradation, logging errors for debugging. Update ExecutePlan to handle and propagate errors appropriately.\n<info added on 2025-11-03T19:36:11.125Z>\nImplementation completed: Timeout and error management already integrated. Each action executor (click, keypress, screenshot) creates timeout contexts. All errors use fmt.Errorf with %w wrapping. ExecutePlan returns early on any action failure with descriptive error including action index and description.\n</info added on 2025-11-03T19:36:11.125Z>",
+            "status": "done",
+            "testStrategy": "Unit test timeout scenarios by simulating slow actions; verify errors are thrown after 30s. Integration test with a game that may fail; check for proper error handling and logging.",
+            "parentId": "undefined",
+            "updatedAt": "2025-11-03T19:36:15.105Z"
+          }
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Break down into subtasks for defining action structs and plans, implementing action executors (click, keypress, wait), integrating with screenshots, and handling timeouts.",
+        "updatedAt": "2025-11-03T19:36:15.105Z"
+      },
+      {
+        "id": "6",
+        "title": "Add UI Pattern Detection",
+        "description": "Implement detection of common UI elements like start buttons and game canvases.",
+        "details": "In internal/agent/interactions.go, add functions to detect patterns using CSS selectors (e.g., button:contains('Start')), OCR on screenshots (integrate a library like tesseract if needed, but keep simple with text matching), and z-index analysis. Prioritize detection before executing interactions. Update interaction plan to use detected elements.",
+        "testStrategy": "Test on sample games; verify detection accuracy for start buttons and canvases. Use fixtures with known UI elements to assert correct selectors are found.",
+        "priority": "medium",
+        "dependencies": [
+          "5"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement CSS Selector-Based UI Detection",
+            "description": "Add functions in internal/agent/interactions.go to detect common UI elements using CSS selectors, such as identifying start buttons with selectors like button:contains('Start') and game canvases with canvas selectors.",
+            "dependencies": [],
+            "details": "Extend the interactions.go file to include a detection function that queries the DOM using chromedp for CSS selectors. Prioritize this detection before executing any interactions in the interaction plan, updating the plan to use detected element selectors for clicks and other actions. Ensure the function handles multiple potential matches and selects the most appropriate one based on visibility and position.",
+            "status": "pending",
+            "testStrategy": "Test on sample HTML pages with known UI elements; verify that selectors correctly identify start buttons and canvases, and assert that the interaction plan updates accordingly.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Integrate OCR and Text Matching for UI Detection",
+            "description": "Implement OCR capabilities in internal/agent/interactions.go to detect UI elements from screenshots, using text matching as a simpler alternative to full OCR libraries like Tesseract.",
+            "dependencies": [],
+            "details": "Add a function to capture screenshots and perform text matching on the image data to identify elements like start buttons by searching for text strings such as 'Start' or 'Play'. Integrate this with z-index analysis if possible, and ensure it complements CSS selector detection. Update the interaction plan to fall back to OCR detection when CSS selectors fail, prioritizing detection before interactions.",
+            "status": "pending",
+            "testStrategy": "Test with screenshot fixtures of game UIs; verify text matching accuracy for detecting buttons and canvases, and ensure integration with the interaction system does not introduce performance issues.",
+            "parentId": "undefined"
+          }
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 2,
+        "expansionPrompt": "Break down into subtasks for CSS selector-based detection and OCR/text matching integration."
+      },
+      {
+        "id": "7",
+        "title": "Integrate Console Log Capture",
+        "description": "Capture browser console logs during the test session.",
+        "details": "In internal/agent/evidence.go, use chromedp's Runtime domain to listen for console events (log, warn, error). Aggregate into LogEntry structs with timestamp, level, message. Include in evidence collection. Pseudo-code: func CaptureLogs(ctx context.Context, cdp *chromedp.CDP) ([]LogEntry, error) { ... enable runtime, listen for events ... }",
+        "testStrategy": "Unit test log capture; inject console logs via JavaScript and verify they are collected. Integration test on a game with intentional errors; check logs include expected entries.",
+        "priority": "medium",
+        "dependencies": [
+          "5"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define LogEntry Struct",
+            "description": "Create a struct to represent console log entries with fields for timestamp, level, and message.",
+            "dependencies": [],
+            "details": "In internal/agent/evidence.go, define a LogEntry struct with fields: Timestamp (time.Time), Level (string, e.g., 'log', 'warn', 'error'), Message (string). Ensure it can be serialized for evidence collection.",
+            "status": "pending",
+            "testStrategy": "Unit test the struct creation and field access.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Enable Runtime Domain in Chromedp",
+            "description": "Set up chromedp to enable the Runtime domain for listening to console events.",
+            "dependencies": [
+              1
+            ],
+            "details": "In the CaptureLogs function, use chromedp to enable the Runtime domain and prepare for event listening. This involves running chromedp tasks to enable runtime and set up event handlers for log, warn, and error events.",
+            "status": "pending",
+            "testStrategy": "Unit test that runtime is enabled without errors in a mock context.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement Event Listening and Aggregation",
+            "description": "Listen for console events and aggregate them into LogEntry structs.",
+            "dependencies": [
+              2
+            ],
+            "details": "Within CaptureLogs, implement event listeners for Runtime.consoleAPICalled events. For each event, create a LogEntry with current timestamp, event level, and message, then append to a slice. Handle different event types (log, warn, error).",
+            "status": "pending",
+            "testStrategy": "Unit test by injecting mock console events and verifying aggregation into LogEntry slices.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Integrate Log Capture into Evidence Collection",
+            "description": "Incorporate the captured logs into the overall evidence collection process.",
+            "dependencies": [
+              3
+            ],
+            "details": "Modify the evidence collection logic in evidence.go to call CaptureLogs during the test session and include the returned LogEntry slice in the evidence output. Ensure logs are collected alongside screenshots and other data.",
+            "status": "pending",
+            "testStrategy": "Integration test by running a full test session and checking that logs are included in the evidence output.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add Error Handling and Timeouts",
+            "description": "Implement error handling and timeouts for the log capture process.",
+            "dependencies": [
+              3
+            ],
+            "details": "Add error handling in CaptureLogs for cases like chromedp failures or timeouts. Set a reasonable timeout for log collection (e.g., matching session duration). Return appropriate errors if log capture fails.",
+            "status": "pending",
+            "testStrategy": "Unit test error scenarios, such as chromedp context cancellation, and verify proper error returns.",
+            "parentId": "undefined"
+          }
+        ],
+        "complexity": 4,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as log capture is a single integration point."
+      },
+      {
+        "id": "8",
+        "title": "Implement LLM Evaluation",
+        "description": "Integrate Anthropic Claude API for AI-based playability assessment.",
+        "details": "In internal/evaluator/llm.go, set up Anthropic client. Encode screenshots to base64, construct prompt from PRD's structure. Send to Claude 3.5 Sonnet, parse JSON response for scores. Handle vision analysis with up to 5 images. Implement scoring algorithm as per PRD. Pseudo-code: func EvaluateGame(screenshots []Screenshot, logs []LogEntry, actions []Action) (*PlayabilityScore, error) { ... build prompt, call API, parse response ... }",
+        "testStrategy": "Mock API responses for unit tests; verify prompt construction and JSON parsing. Integration test with real API on sample games; compare scores against expected outcomes.",
+        "priority": "high",
+        "dependencies": [
+          "3",
+          "7"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up Anthropic Claude Client",
+            "description": "Initialize the Anthropic client in internal/evaluator/llm.go with API key and configuration for Claude 3.5 Sonnet.",
+            "dependencies": [],
+            "details": "Implement client setup using the Anthropic SDK, handle authentication with API key, configure timeouts and retry logic for API calls, and prepare the structure for sending prompts and receiving responses.",
+            "status": "pending",
+            "testStrategy": "Mock API initialization to verify client creation, authentication, and basic error handling without actual network calls.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Encode Screenshots and Build Prompts",
+            "description": "Encode up to 5 screenshots to base64 format and construct the evaluation prompt based on PRD structure, incorporating logs and actions.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement base64 encoding for PNG screenshots, build structured prompts including game context from logs and actions, ensure prompt adheres to Claude's vision input format for multiple images, and prepare the data for API submission.",
+            "status": "pending",
+            "testStrategy": "Unit tests with sample screenshots and mock data to verify base64 encoding accuracy, prompt structure, and handling of up to 5 images.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Parse API Responses and Compute Scores",
+            "description": "Parse the JSON response from Claude API to extract playability scores and implement the scoring algorithm as per PRD.",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement JSON parsing of the API response, extract relevant scores and feedback, apply the scoring algorithm to compute overall playability metrics, handle errors in response format, and return a structured PlayabilityScore object.",
+            "status": "pending",
+            "testStrategy": "Mock API responses in unit tests to verify JSON parsing, score extraction, and algorithm computation against expected outcomes.",
+            "parentId": "undefined"
+          }
+        ],
+        "complexity": 8,
+        "recommendedSubtasks": 3,
+        "expansionPrompt": "Break down into subtasks for setting up Anthropic client and API calls, encoding screenshots and building prompts, and parsing responses for scoring."
+      },
+      {
+        "id": "9",
+        "title": "Add Report Generation and Storage",
+        "description": "Generate JSON reports and upload artifacts to S3.",
+        "details": "In internal/reporter/, implement JSON report builder using the PRD's format, including metrics, issues, evidence. Use AWS SDK to upload screenshots and logs to S3 bucket (dreamup-qa-artifacts). Structure as per PRD's artifact layout. Pseudo-code: func GenerateReport(score PlayabilityScore, evidence Evidence) (*Report, error) { ... build JSON, upload to S3 ... }",
+        "testStrategy": "Unit test report JSON structure against schema. Integration test: generate report from a full test run and verify S3 uploads; check report contains all required fields and links.",
+        "priority": "medium",
+        "dependencies": [
+          "8"
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up Reporter Package Structure",
+            "description": "Create the internal/reporter/ directory and initialize necessary files for report generation.",
+            "dependencies": [],
+            "details": "Establish the directory structure for the reporter module, including files for report builder, S3 uploader, and any utility functions. Ensure it aligns with the project's overall architecture.",
+            "status": "pending",
+            "testStrategy": "Verify directory creation and basic file imports compile without errors.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement JSON Report Builder",
+            "description": "Develop the JSON report builder using the PRD's format, incorporating metrics, issues, and evidence.",
+            "dependencies": [
+              1
+            ],
+            "details": "In internal/reporter/, create a function to build JSON reports based on PlayabilityScore and Evidence structs. Include all required fields as per PRD specifications, ensuring proper JSON schema compliance.",
+            "status": "pending",
+            "testStrategy": "Unit test the JSON structure against a predefined schema to validate format and required fields.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Integrate AWS SDK for S3 Upload",
+            "description": "Set up AWS SDK integration to upload screenshots and logs to the dreamup-qa-artifacts S3 bucket.",
+            "dependencies": [
+              1
+            ],
+            "details": "Configure AWS SDK v2 in the reporter package to handle uploads. Implement functions for uploading artifacts with proper error handling, using the bucket name and structuring as per PRD's artifact layout.",
+            "status": "pending",
+            "testStrategy": "Unit test S3 upload functionality with mock data to ensure successful uploads and error handling.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Combine Report Generation and Upload Logic",
+            "description": "Integrate the JSON building and S3 upload into a single GenerateReport function.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Modify the GenerateReport function to first build the JSON report and then upload associated artifacts to S3, linking them appropriately in the report. Handle dependencies between report creation and uploads.",
+            "status": "pending",
+            "testStrategy": "Integration test by generating a full report from sample data and verifying both JSON content and S3 artifact presence.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Add Schema Validation and Error Handling",
+            "description": "Implement validation for report JSON against schema and robust error handling for uploads.",
+            "dependencies": [
+              4
+            ],
+            "details": "Add schema validation to ensure the generated JSON meets PRD requirements. Enhance error handling for S3 uploads, including retries and logging failures. Ensure the function returns appropriate errors.",
+            "status": "pending",
+            "testStrategy": "Test with invalid data to confirm validation catches errors, and simulate upload failures to verify error handling.",
+            "parentId": "undefined"
+          }
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 0,
+        "expansionPrompt": "No expansion needed as report building and S3 upload are integrated."
+      },
+      {
+        "id": "10",
+        "title": "Implement Error Handling and Lambda Deployment",
+        "description": "Add comprehensive error handling, retry logic, and prepare for Lambda deployment, coordinating with Task 6 for basic interaction execution error handling.",
+        "status": "pending",
+        "dependencies": [
+          "4",
+          "6",
+          "9"
+        ],
+        "priority": "high",
+        "details": "In various modules, implement error categorization, retry policies (exponential backoff), and graceful degradation. Align error categories and retry primitives with those introduced in Task 6 (basic interaction execution errors) to ensure consistency and avoid duplication. Wrap the agent in a Lambda handler (cmd/qa/main.go) for AWS Lambda, handling input events and responses. Include timeout (5 min), configuration loading. Build for Linux amd64, zip as bootstrap. Pseudo-code for handler: func HandleRequest(ctx context.Context, event InputEvent) (Response, error) { ... run full test, return report ... }",
+        "testStrategy": "Execute after Task 6 is available. Unit tests for error scenarios (browser crash, API failure); verify retries and degradation, including propagation/compatibility with interaction-level errors surfaced by Task 6. Deploy to Lambda test environment; invoke with sample events and check responses, execution time, and costs.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Retry Logic and Error Categorization",
+            "description": "Add comprehensive error handling with categorization and retry policies using exponential backoff across various modules.",
+            "dependencies": [],
+            "details": "In modules like browser.go, interactions.go, and evaluator/llm.go, define error types (e.g., network, API, browser failures), implement retry mechanisms with exponential backoff (starting at 1s, max 30s, max retries 3), and ensure graceful degradation by logging errors and continuing with partial results where possible. Use context for cancellation and timeouts.",
+            "status": "pending",
+            "testStrategy": "Unit tests for error scenarios including browser crashes and API failures; verify retry counts, backoff delays, and degradation behavior.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Wrap Agent in Lambda Handler",
+            "description": "Create a Lambda handler in cmd/qa/main.go to wrap the agent for AWS Lambda deployment.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement func HandleRequest(ctx context.Context, event InputEvent) (Response, error) in cmd/qa/main.go. Handle input events, load configurations, run the full test (browser launch, interactions, evaluation), and return the report. Include 5-minute timeout handling using context.WithTimeout. Ensure proper error propagation and response formatting.",
+            "status": "pending",
+            "testStrategy": "Unit tests for handler with mock events; integration tests by deploying to Lambda test environment and invoking with sample events to check responses and execution times.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Prepare Deployment Artifacts",
+            "description": "Build the application for Linux amd64 and package it as a Lambda deployment artifact.",
+            "dependencies": [
+              2
+            ],
+            "details": "Use Go build commands to compile the binary for linux/amd64 architecture. Zip the binary as 'bootstrap' in the root directory. Ensure all dependencies are included and the artifact is ready for AWS Lambda upload. Test the build process locally to confirm the binary runs correctly in a Linux environment.",
+            "status": "pending",
+            "testStrategy": "Verify build succeeds and binary executes on Linux; deploy artifact to Lambda and check invocation costs and performance.",
+            "parentId": "undefined"
+          }
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 3,
+        "expansionPrompt": "Break down into subtasks for implementing retry logic and error categorization, wrapping in Lambda handler, and preparing deployment artifacts."
+      },
+      {
+        "id": "11",
+        "title": "Add UI Pattern Detection",
+        "description": "Implement robust detection of common UI elements (e.g., Start/Play buttons and game canvases) and integrate results into the interaction system so interaction plans prefer detected elements over hardcoded selectors.",
+        "details": "Scope and location\n- Add detection utilities in `internal/agent/interactions.go` (optionally extract to `internal/agent/detection.go` if code grows). Create a `DetectedUI` struct: `{ StartSelector string; CanvasSelector string; Confidence float64; Debug []string }` and a `PatternDetector` interface with `Detect(ctx, cdp) (DetectedUI, error)`.\n\nCSS selector/text heuristics (primary)\n- Enumerate candidates with DOM queries via chromedp/JS: `button, [role=\"button\"], .btn, .play, .start, a, div[role=\"button\"], canvas + *` and filter by visible + clickable criteria.\n- Implement case-insensitive innerText matching for common phrases: [\"start\", \"play\", \"tap to start\", \"begin\", \"resume\"]. Avoid non-standard `:contains()`; instead query candidates and filter by `element.innerText` substring (normalized whitespace, lowercased, diacritics stripped).\n- Canvas detection: prefer `<canvas>` nodes with largest on-screen area and non-zero size; fallback to containers with `#game, .game, [data-game]`.\n\nClickability & z-index analysis\n- For each candidate, compute `getBoundingClientRect()`, `window.getComputedStyle(el).zIndex`, `display`, `visibility`, `opacity`, `pointer-events`. Discard hidden/transparent/blocked elements.\n- Use `document.elementFromPoint(cx, cy)` at element center to confirm it is topmost/clickable; if not, attempt nearby points (3x3 grid) and penalize confidence if overlays partially cover it.\n- Score candidates by text match weight + size/area + z-index prominence + clickability; pick highest score above a threshold.\n\nOCR fallback (optional, simple)\n- If DOM/text heuristics fail, capture a viewport or region screenshot with chromedp. Integrate OCR via `gosseract` (Tesseract) behind a feature flag/env (e.g., `OCR_ENABLED=true`). Keep it simple: search for keywords [\"start\", \"play\"] in recognized text; map word bounding boxes to screen points; infer a selector by probing `document.elementFromPoint(x, y)` and walking up to a clickable ancestor.\n- Make OCR dependency optional; degrade gracefully when Tesseract is unavailable. Provide configuration for language (`OCR_LANG`), timeout, and keywords via viper/env.\n\nExecution ordering & plan integration\n- Update the interaction planning path (e.g., `BuildInteractionPlan` or equivalent) to call detection first. If `DetectedUI.StartSelector` is set, inject a `click` action using that selector; else keep existing fallback selectors. Prefer the detected canvas when sending gameplay key events or when focusing the game.\n- Add a `DetectionFirst` flag and a max detection time (e.g., 1500–3000 ms) to avoid delaying runs. Log detection decisions and chosen selectors at debug level using zap.\n\nAPI and error handling\n- Expose `DetectStartButton(ctx, cdp)` and `DetectGameCanvas(ctx, cdp)` helpers used by the main `Detect`. Return structured errors with context (timeout, no-candidates, ocr-unavailable). Include debug artifacts (e.g., chosen rects, reason codes) in `DetectedUI.Debug`.\n\nPerformance & reliability\n- Cache DOM query results within a single detection run; avoid full-page screenshots unless needed. Use time-bounded chromedp actions; ensure headless stability. Add retries with small jitter for transient layout changes.\n\nTelemetry & troubleshooting\n- Add debug logs for top N candidates with scores and rejection reasons. Optionally emit a diagnostic overlay in dev mode by injecting lightweight CSS outlines (guarded by a debug flag).",
+        "testStrategy": "Unit tests (DOM heuristics)\n- Create HTML fixtures under `test/fixtures/ui/` covering: basic Start button; multiple buttons with only one matching text; buttons nested in containers; aria/button roles; hidden/disabled elements; overlay covering the button; multiple canvases with one primary.\n- Use chromedp to load fixtures and assert: `DetectStartButton` returns a stable selector; `DetectGameCanvas` selects the largest/primary canvas; overlay cases reduce confidence or choose the unobstructed candidate.\n\nZ-index and clickability\n- Fixture with two stacked buttons where only the top is clickable; verify `elementFromPoint` and style checks pick the clickable one. Add cases with `opacity:0`, `visibility:hidden`, `pointer-events:none` to ensure they are rejected.\n\nOCR (optional path)\n- Gate tests with `OCR_ENABLED=1` and skip when unavailable. Provide an image or canvas-drawn text \"START\" without DOM text; verify OCR finds a click point and that probing maps back to a clickable ancestor selector.\n\nPlan integration behavior\n- Given a minimal interaction plan builder, assert that when detection succeeds, the first click action uses the detected `StartSelector`; when it fails, falls back to the prior hardcoded selector. Add a test ensuring gameplay actions target the detected canvas when present.\n\nStability and performance\n- Add time-boxed tests to ensure detection completes within the configured timeout (e.g., <3s) and logs contain decision details. Include negative tests (no start button) to confirm graceful degradation and informative errors.",
+        "status": "pending",
+        "dependencies": [
+          "6"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "version": "1.0.0",
+      "lastModified": "2025-11-03T19:36:15.106Z",
+      "taskCount": 11,
+      "completedCount": 5,
+      "tags": [
+        "master"
+      ]
+    }
+  }
+}
