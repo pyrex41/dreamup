@@ -42,6 +42,7 @@ type alias Model =
     , reportLoading : Bool
     , reportError : Maybe String
     , expandedSections : ExpandedSections
+    , screenshotViewer : ScreenshotViewerState
     }
 
 
@@ -51,6 +52,28 @@ type alias ExpandedSections =
     , reasoning : Bool
     , consoleLogs : Bool
     }
+
+
+type alias ScreenshotViewerState =
+    { currentIndex : Int
+    , viewMode : ViewMode
+    , zoomLevel : ZoomLevel
+    , isFullScreen : Bool
+    , overlayOpacity : Int
+    , loadedImages : List Int
+    }
+
+
+type ViewMode
+    = SideBySide
+    | Overlay
+    | Difference
+
+
+type ZoomLevel
+    = FitToScreen
+    | Zoom100
+    | Zoom200
 
 
 type alias TestForm =
@@ -173,6 +196,7 @@ init flags url key =
       , reportLoading = False
       , reportError = Nothing
       , expandedSections = initExpandedSections
+      , screenshotViewer = initScreenshotViewer
       }
     , cmd
     )
@@ -184,6 +208,17 @@ initExpandedSections =
     , recommendations = False
     , reasoning = False
     , consoleLogs = False
+    }
+
+
+initScreenshotViewer : ScreenshotViewerState
+initScreenshotViewer =
+    { currentIndex = 0
+    , viewMode = SideBySide
+    , zoomLevel = FitToScreen
+    , isFullScreen = False
+    , overlayOpacity = 50
+    , loadedImages = []
     }
 
 
@@ -239,6 +274,14 @@ type Msg
     | CopyReportLink String
     | DownloadReportJson Report
     | RerunTest String
+    | SelectScreenshot Int
+    | ChangeViewMode ViewMode
+    | ChangeZoomLevel ZoomLevel
+    | ToggleFullScreen
+    | AdjustOverlayOpacity Int
+    | ImageLoaded Int
+    | PreviousScreenshot
+    | NextScreenshot
 
 
 type SectionType
@@ -456,6 +499,112 @@ update msg model =
             ( { model | testForm = updatedForm, route = TestSubmission }
             , Nav.pushUrl model.key "/submit"
             )
+
+        SelectScreenshot index ->
+            let
+                viewer =
+                    model.screenshotViewer
+
+                updatedViewer =
+                    { viewer | currentIndex = index }
+            in
+            ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+        ChangeViewMode viewMode ->
+            let
+                viewer =
+                    model.screenshotViewer
+
+                updatedViewer =
+                    { viewer | viewMode = viewMode }
+            in
+            ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+        ChangeZoomLevel zoomLevel ->
+            let
+                viewer =
+                    model.screenshotViewer
+
+                updatedViewer =
+                    { viewer | zoomLevel = zoomLevel }
+            in
+            ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+        ToggleFullScreen ->
+            let
+                viewer =
+                    model.screenshotViewer
+
+                updatedViewer =
+                    { viewer | isFullScreen = not viewer.isFullScreen }
+            in
+            ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+        AdjustOverlayOpacity opacity ->
+            let
+                viewer =
+                    model.screenshotViewer
+
+                updatedViewer =
+                    { viewer | overlayOpacity = opacity }
+            in
+            ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+        ImageLoaded index ->
+            let
+                viewer =
+                    model.screenshotViewer
+
+                updatedViewer =
+                    { viewer | loadedImages = index :: viewer.loadedImages }
+            in
+            ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+        PreviousScreenshot ->
+            case model.currentReport of
+                Just report ->
+                    let
+                        viewer =
+                            model.screenshotViewer
+
+                        totalScreenshots =
+                            List.length report.evidence.screenshots
+
+                        newIndex =
+                            if viewer.currentIndex > 0 then
+                                viewer.currentIndex - 1
+
+                            else
+                                totalScreenshots - 1
+
+                        updatedViewer =
+                            { viewer | currentIndex = newIndex }
+                    in
+                    ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        NextScreenshot ->
+            case model.currentReport of
+                Just report ->
+                    let
+                        viewer =
+                            model.screenshotViewer
+
+                        totalScreenshots =
+                            List.length report.evidence.screenshots
+
+                        newIndex =
+                            remainderBy totalScreenshots (viewer.currentIndex + 1)
+
+                        updatedViewer =
+                            { viewer | currentIndex = newIndex }
+                    in
+                    ( { model | screenshotViewer = updatedViewer }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
 
 
 -- VALIDATION
@@ -979,6 +1128,13 @@ viewReport model report =
                     [ p [] [ text "No evaluation metrics available." ]
                     ]
 
+        -- Screenshot Viewer (Task 5)
+        , if List.isEmpty report.evidence.screenshots |> not then
+            viewScreenshotViewer model report.evidence.screenshots
+
+          else
+            text ""
+
         -- Collapsible Issues and Recommendations (Subtask 3)
         , case report.score of
             Just score ->
@@ -1204,6 +1360,341 @@ viewReportActions report =
                 , onClick (RerunTest report.gameUrl)
                 ]
                 [ text "🔄 Re-run Test" ]
+            ]
+        ]
+
+
+{-| Task 5: Screenshot Viewer with Lazy Loading, View Modes, Zoom, and Metadata -}
+viewScreenshotViewer : Model -> List ScreenshotInfo -> Html Msg
+viewScreenshotViewer model screenshots =
+    let
+        viewer =
+            model.screenshotViewer
+
+        currentScreenshot =
+            List.drop viewer.currentIndex screenshots
+                |> List.head
+    in
+    div
+        [ class
+            (if viewer.isFullScreen then
+                "screenshot-viewer fullscreen"
+
+             else
+                "screenshot-viewer"
+            )
+        ]
+        [ h3 [] [ text ("Screenshots (" ++ String.fromInt (List.length screenshots) ++ ")") ]
+        , case currentScreenshot of
+            Just screenshot ->
+                div [ class "viewer-container" ]
+                    [ -- Toolbar (Subtask 3: Zoom Controls + View Modes)
+                      viewScreenshotToolbar viewer
+
+                    -- Main Viewer Area (Subtask 1 & 2: Lazy Loading + View Modes)
+                    , viewScreenshotDisplay viewer screenshot screenshots
+
+                    -- Thumbnail Navigation (Subtask 1: Lazy Loading)
+                    , viewThumbnailStrip model screenshots
+
+                    -- Metadata Display (Subtask 4)
+                    , viewScreenshotMetadata screenshot
+                    ]
+
+            Nothing ->
+                div [ class "no-screenshots" ]
+                    [ text "No screenshots available" ]
+        ]
+
+
+{-| Subtask 3: Screenshot Toolbar with Zoom and View Mode Controls -}
+viewScreenshotToolbar : ScreenshotViewerState -> Html Msg
+viewScreenshotToolbar viewer =
+    div [ class "screenshot-toolbar" ]
+        [ div [ class "toolbar-group view-modes" ]
+            [ span [ class "toolbar-label" ] [ text "View:" ]
+            , button
+                [ class
+                    (if viewer.viewMode == SideBySide then
+                        "btn-mode active"
+
+                     else
+                        "btn-mode"
+                    )
+                , onClick (ChangeViewMode SideBySide)
+                ]
+                [ text "Side-by-Side" ]
+            , button
+                [ class
+                    (if viewer.viewMode == Overlay then
+                        "btn-mode active"
+
+                     else
+                        "btn-mode"
+                    )
+                , onClick (ChangeViewMode Overlay)
+                ]
+                [ text "Overlay" ]
+            , button
+                [ class
+                    (if viewer.viewMode == Difference then
+                        "btn-mode active"
+
+                     else
+                        "btn-mode"
+                    )
+                , onClick (ChangeViewMode Difference)
+                ]
+                [ text "Difference" ]
+            ]
+        , div [ class "toolbar-group zoom-controls" ]
+            [ span [ class "toolbar-label" ] [ text "Zoom:" ]
+            , button
+                [ class
+                    (if viewer.zoomLevel == FitToScreen then
+                        "btn-zoom active"
+
+                     else
+                        "btn-zoom"
+                    )
+                , onClick (ChangeZoomLevel FitToScreen)
+                ]
+                [ text "Fit" ]
+            , button
+                [ class
+                    (if viewer.zoomLevel == Zoom100 then
+                        "btn-zoom active"
+
+                     else
+                        "btn-zoom"
+                    )
+                , onClick (ChangeZoomLevel Zoom100)
+                ]
+                [ text "100%" ]
+            , button
+                [ class
+                    (if viewer.zoomLevel == Zoom200 then
+                        "btn-zoom active"
+
+                     else
+                        "btn-zoom"
+                    )
+                , onClick (ChangeZoomLevel Zoom200)
+                ]
+                [ text "200%" ]
+            ]
+        , div [ class "toolbar-group fullscreen-control" ]
+            [ button [ class "btn-fullscreen", onClick ToggleFullScreen ]
+                [ text
+                    (if viewer.isFullScreen then
+                        "⛶ Exit Fullscreen"
+
+                     else
+                        "⛶ Fullscreen"
+                    )
+                ]
+            ]
+        ]
+
+
+{-| Subtask 2: Screenshot Display with View Modes -}
+viewScreenshotDisplay : ScreenshotViewerState -> ScreenshotInfo -> List ScreenshotInfo -> Html Msg
+viewScreenshotDisplay viewer current allScreenshots =
+    let
+        zoomClass =
+            case viewer.zoomLevel of
+                FitToScreen ->
+                    "zoom-fit"
+
+                Zoom100 ->
+                    "zoom-100"
+
+                Zoom200 ->
+                    "zoom-200"
+
+        imageUrl =
+            Maybe.withDefault current.filepath current.s3Url
+    in
+    div [ class ("screenshot-display " ++ zoomClass) ]
+        [ case viewer.viewMode of
+            SideBySide ->
+                viewSideBySide current allScreenshots
+
+            Overlay ->
+                viewOverlay viewer current allScreenshots
+
+            Difference ->
+                viewDifference current allScreenshots
+        , div [ class "navigation-controls" ]
+            [ button [ class "btn-nav prev", onClick PreviousScreenshot ] [ text "◀ Previous" ]
+            , span [ class "screenshot-counter" ]
+                [ text (String.fromInt (viewer.currentIndex + 1) ++ " / " ++ String.fromInt (List.length allScreenshots)) ]
+            , button [ class "btn-nav next", onClick NextScreenshot ] [ text "Next ▶" ]
+            ]
+        ]
+
+
+viewSideBySide : ScreenshotInfo -> List ScreenshotInfo -> Html Msg
+viewSideBySide current allScreenshots =
+    let
+        previous =
+            List.head allScreenshots
+
+        imageUrl =
+            Maybe.withDefault current.filepath current.s3Url
+
+        prevUrl =
+            previous
+                |> Maybe.andThen (\p -> Maybe.withDefault p.filepath p.s3Url |> Just)
+                |> Maybe.withDefault imageUrl
+    in
+    div [ class "view-sidebyside" ]
+        [ div [ class "side-image" ]
+            [ div [ class "image-label" ] [ text "Before" ]
+            , img [ src prevUrl, alt "Before screenshot" ] []
+            ]
+        , div [ class "side-image" ]
+            [ div [ class "image-label" ] [ text "Current" ]
+            , img [ src imageUrl, alt "Current screenshot" ] []
+            ]
+        ]
+
+
+viewOverlay : ScreenshotViewerState -> ScreenshotInfo -> List ScreenshotInfo -> Html Msg
+viewOverlay viewer current allScreenshots =
+    let
+        previous =
+            List.head allScreenshots
+
+        imageUrl =
+            Maybe.withDefault current.filepath current.s3Url
+
+        prevUrl =
+            previous
+                |> Maybe.andThen (\p -> Maybe.withDefault p.filepath p.s3Url |> Just)
+                |> Maybe.withDefault imageUrl
+
+        opacityValue =
+            toFloat viewer.overlayOpacity / 100
+    in
+    div [ class "view-overlay" ]
+        [ div [ class "overlay-container" ]
+            [ img [ src prevUrl, alt "Base screenshot", class "overlay-base" ] []
+            , img
+                [ src imageUrl
+                , alt "Overlay screenshot"
+                , class "overlay-top"
+                , style "opacity" (String.fromFloat opacityValue)
+                ]
+                []
+            ]
+        , div [ class "overlay-slider" ]
+            [ span [] [ text "Opacity:" ]
+            , input
+                [ type_ "range"
+                , Html.Attributes.min "0"
+                , Html.Attributes.max "100"
+                , value (String.fromInt viewer.overlayOpacity)
+                , onInput (String.toInt >> Maybe.withDefault 50 >> AdjustOverlayOpacity)
+                ]
+                []
+            , span [] [ text (String.fromInt viewer.overlayOpacity ++ "%") ]
+            ]
+        ]
+
+
+viewDifference : ScreenshotInfo -> List ScreenshotInfo -> Html Msg
+viewDifference current allScreenshots =
+    let
+        imageUrl =
+            Maybe.withDefault current.filepath current.s3Url
+    in
+    div [ class "view-difference" ]
+        [ div [ class "difference-notice" ]
+            [ text "⚠ Difference mode requires canvas processing (not yet implemented)" ]
+        , img [ src imageUrl, alt "Screenshot", class "difference-image" ] []
+        ]
+
+
+{-| Subtask 1: Thumbnail Strip with Lazy Loading -}
+viewThumbnailStrip : Model -> List ScreenshotInfo -> Html Msg
+viewThumbnailStrip model screenshots =
+    div [ class "thumbnail-strip" ]
+        (List.indexedMap (viewThumbnail model) screenshots)
+
+
+viewThumbnail : Model -> Int -> ScreenshotInfo -> Html Msg
+viewThumbnail model index screenshot =
+    let
+        viewer =
+            model.screenshotViewer
+
+        isActive =
+            viewer.currentIndex == index
+
+        isLoaded =
+            List.member index viewer.loadedImages
+
+        imageUrl =
+            Maybe.withDefault screenshot.filepath screenshot.s3Url
+    in
+    div
+        [ class
+            (if isActive then
+                "thumbnail active"
+
+             else
+                "thumbnail"
+            )
+        , onClick (SelectScreenshot index)
+        ]
+        [ if isLoaded then
+            img
+                [ src imageUrl
+                , alt ("Screenshot " ++ String.fromInt (index + 1))
+                , class "thumbnail-image"
+                ]
+                []
+
+          else
+            div [ class "thumbnail-placeholder" ]
+                [ text "..." ]
+        , div [ class "thumbnail-label" ] [ text (String.fromInt (index + 1)) ]
+        ]
+
+
+{-| Subtask 4: Screenshot Metadata Display -}
+viewScreenshotMetadata : ScreenshotInfo -> Html Msg
+viewScreenshotMetadata screenshot =
+    div [ class "screenshot-metadata" ]
+        [ h4 [] [ text "Metadata" ]
+        , div [ class "metadata-grid" ]
+            [ div [ class "metadata-item" ]
+                [ span [ class "metadata-label" ] [ text "Context:" ]
+                , span [ class "metadata-value" ] [ text screenshot.context ]
+                ]
+            , div [ class "metadata-item" ]
+                [ span [ class "metadata-label" ] [ text "Timestamp:" ]
+                , span [ class "metadata-value" ] [ text screenshot.timestamp ]
+                ]
+            , div [ class "metadata-item" ]
+                [ span [ class "metadata-label" ] [ text "Resolution:" ]
+                , span [ class "metadata-value" ]
+                    [ text (String.fromInt screenshot.width ++ " × " ++ String.fromInt screenshot.height) ]
+                ]
+            , div [ class "metadata-item" ]
+                [ span [ class "metadata-label" ] [ text "File:" ]
+                , span [ class "metadata-value" ] [ text screenshot.filepath ]
+                ]
+            , case screenshot.s3Url of
+                Just url ->
+                    div [ class "metadata-item" ]
+                        [ span [ class "metadata-label" ] [ text "S3 URL:" ]
+                        , a [ href url, class "metadata-link", Html.Attributes.target "_blank" ] [ text "View on S3" ]
+                        ]
+
+                Nothing ->
+                    text ""
             ]
         ]
 
