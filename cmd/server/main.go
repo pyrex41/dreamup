@@ -364,28 +364,43 @@ func (s *Server) executeTest(job *TestJob) {
 		}
 	}
 
-	s.updateJob(job.ID, "running", 55, "Simulating gameplay...")
+	s.updateJob(job.ID, "running", 55, "Waiting for game to load...")
 
-	// Wait for game to fully load and render
-	time.Sleep(3 * time.Second)
+	// Wait for game to fully load and render (smart detection)
+	log.Printf("Waiting for game canvas to be ready...")
+	gameReady, err := detector.WaitForGameReady(10)
+	if err != nil {
+		log.Printf("Error waiting for game ready: %v", err)
+	} else if !gameReady {
+		log.Printf("Warning: Game canvas did not appear ready within timeout, proceeding anyway")
+	} else {
+		log.Printf("Game canvas is ready!")
+	}
+
+	// Focus the game canvas to ensure it receives keyboard events
+	log.Printf("Focusing game canvas...")
+	focused, err := detector.FocusGameCanvas()
+	if err != nil {
+		log.Printf("Error focusing canvas: %v", err)
+	} else if !focused {
+		log.Printf("Warning: Could not focus canvas, keyboard inputs may not work")
+	} else {
+		log.Printf("Canvas focused successfully!")
+	}
+
+	s.updateJob(job.ID, "running", 60, "Playing game with keyboard controls...")
 
 	// Simulate realistic gameplay with varied interactions over time
 	// This gives the AI more meaningful data to evaluate
 	gameplayDuration := 10 * time.Second // Much longer gameplay
 	gameplayStart := time.Now()
 
-	log.Printf("Starting %v of interactive gameplay...", gameplayDuration)
+	log.Printf("Starting %v of interactive gameplay with canvas keyboard events...", gameplayDuration)
 
-	// Gameplay loop - mix of keys, clicks, and waits
+	// Gameplay loop - send keyboard events directly to canvas
 	for time.Since(gameplayStart) < gameplayDuration {
-		progress := 55 + int(30*time.Since(gameplayStart).Seconds()/gameplayDuration.Seconds())
+		progress := 60 + int(25*time.Since(gameplayStart).Seconds()/gameplayDuration.Seconds())
 		s.updateJob(job.ID, "running", progress, fmt.Sprintf("Playing game... %.0fs elapsed", time.Since(gameplayStart).Seconds()))
-
-		// Try clicking canvas to ensure focus
-		canvasSelector, _ := detector.GetGameCanvas()
-		if canvasSelector != "" {
-			chromedp.Run(bm.GetContext(), chromedp.Click(canvasSelector, chromedp.ByQuery))
-		}
 
 		// Send varied key presses (more realistic gameplay)
 		gameplayActions := []string{
@@ -399,7 +414,13 @@ func (s *Server) executeTest(job *TestJob) {
 		}
 
 		for _, key := range gameplayActions {
-			chromedp.Run(bm.GetContext(), chromedp.KeyEvent(key))
+			// Use new canvas-focused keyboard event dispatch
+			sent, err := detector.SendKeyboardEventToCanvas(key)
+			if err != nil {
+				log.Printf("Error sending key %s: %v", key, err)
+			} else if !sent {
+				log.Printf("Warning: Failed to send key %s to canvas", key)
+			}
 			time.Sleep(150 * time.Millisecond) // Slightly faster inputs
 		}
 

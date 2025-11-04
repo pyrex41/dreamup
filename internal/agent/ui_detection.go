@@ -431,3 +431,185 @@ func (d *UIDetector) AcceptCookieConsent() (bool, error) {
 
 	return clicked, nil
 }
+
+// FocusGameCanvas focuses the game canvas element to ensure it receives keyboard events
+// Returns true if canvas was found and focused successfully
+func (d *UIDetector) FocusGameCanvas() (bool, error) {
+	script := `
+(function() {
+	// Find the game canvas
+	const canvas = document.querySelector('canvas');
+	if (!canvas) {
+		return false;
+	}
+
+	// Make canvas focusable by setting tabindex
+	canvas.setAttribute('tabindex', '0');
+
+	// Focus the canvas element
+	canvas.focus();
+
+	// Verify focus was successful
+	return document.activeElement === canvas;
+})();
+`
+
+	var focused bool
+	err := chromedp.Run(d.ctx,
+		chromedp.Evaluate(script, &focused),
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to focus game canvas: %w", err)
+	}
+
+	return focused, nil
+}
+
+// SendKeyboardEventToCanvas sends a keyboard event directly to the canvas element
+// keyCode is the key to send (e.g., "ArrowUp", "ArrowDown", "Space", "w", "a", "s", "d")
+// Returns true if the event was dispatched successfully
+func (d *UIDetector) SendKeyboardEventToCanvas(keyCode string) (bool, error) {
+	script := fmt.Sprintf(`
+(function() {
+	const canvas = document.querySelector('canvas');
+	if (!canvas) {
+		return false;
+	}
+
+	// Ensure canvas is focused
+	if (document.activeElement !== canvas) {
+		canvas.focus();
+	}
+
+	// Key code mapping for special keys
+	const keyMap = {
+		'ArrowUp': 38,
+		'ArrowDown': 40,
+		'ArrowLeft': 37,
+		'ArrowRight': 39,
+		'Space': 32,
+		'Enter': 13,
+		'Escape': 27
+	};
+
+	const key = %q;
+	const code = keyMap[key] || key.charCodeAt(0);
+
+	// Create and dispatch keydown event to both canvas and window
+	const keydownEvent = new KeyboardEvent('keydown', {
+		key: key,
+		code: key,
+		keyCode: code,
+		which: code,
+		bubbles: true,
+		cancelable: true
+	});
+
+	canvas.dispatchEvent(keydownEvent);
+	window.dispatchEvent(keydownEvent);
+
+	// Small delay between keydown and keyup
+	setTimeout(function() {
+		const keyupEvent = new KeyboardEvent('keyup', {
+			key: key,
+			code: key,
+			keyCode: code,
+			which: code,
+			bubbles: true,
+			cancelable: true
+		});
+
+		canvas.dispatchEvent(keyupEvent);
+		window.dispatchEvent(keyupEvent);
+	}, 50);
+
+	return true;
+})();
+`, keyCode)
+
+	var dispatched bool
+	err := chromedp.Run(d.ctx,
+		chromedp.Evaluate(script, &dispatched),
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to send keyboard event %s: %w", keyCode, err)
+	}
+
+	return dispatched, nil
+}
+
+// WaitForGameReady polls the canvas to check if it has been rendered (not blank)
+// Returns true if canvas is ready, false if timeout reached
+func (d *UIDetector) WaitForGameReady(timeoutSeconds int) (bool, error) {
+	script := fmt.Sprintf(`
+(function() {
+	return new Promise(function(resolve) {
+		const timeout = %d * 1000; // Convert to milliseconds
+		const startTime = Date.now();
+		const pollInterval = 500; // Check every 500ms
+
+		function checkCanvas() {
+			const canvas = document.querySelector('canvas');
+			if (!canvas) {
+				if (Date.now() - startTime >= timeout) {
+					resolve(false); // Timeout - no canvas found
+					return;
+				}
+				setTimeout(checkCanvas, pollInterval);
+				return;
+			}
+
+			// Check if canvas has been rendered (width and height are set)
+			if (canvas.width > 0 && canvas.height > 0) {
+				// Try to check if canvas has any content
+				try {
+					const ctx = canvas.getContext('2d');
+					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+					const data = imageData.data;
+
+					// Check if canvas has any non-transparent pixels
+					let hasContent = false;
+					for (let i = 3; i < data.length; i += 4) {
+						if (data[i] > 0) { // Alpha channel > 0
+							hasContent = true;
+							break;
+						}
+					}
+
+					if (hasContent) {
+						resolve(true); // Canvas is rendered and has content
+						return;
+					}
+				} catch (e) {
+					// Can't read canvas (CORS issue), assume it's ready if sized
+					resolve(true);
+					return;
+				}
+			}
+
+			// Not ready yet, check again
+			if (Date.now() - startTime >= timeout) {
+				resolve(false); // Timeout
+				return;
+			}
+			setTimeout(checkCanvas, pollInterval);
+		}
+
+		checkCanvas();
+	});
+})();
+`, timeoutSeconds)
+
+	var ready bool
+	err := chromedp.Run(d.ctx,
+		chromedp.Evaluate(script, &ready),
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to wait for game ready: %w", err)
+	}
+
+	return ready, nil
+}
