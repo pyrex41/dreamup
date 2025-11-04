@@ -1,8 +1,8 @@
 # DreamUp QA Agent - Current Progress Summary
 
-**Last Updated**: 2025-11-03 19:35
-**Project Status**: 🟢 Active Development - Phase 1 Keyboard Fixes Complete, Testing Required
-**Overall Completion**: ~90% (Core features done, keyboard fix implemented, needs verification)
+**Last Updated**: 2025-11-03 20:48
+**Project Status**: 🟡 Active Development - Keyboard Input Debugging & PRD Update Complete
+**Overall Completion**: ~90% (Core features done, awaiting keyboard input fix verification)
 
 ---
 
@@ -15,152 +15,199 @@
 4. **Tailwind CSS Integration (100%)** - Modern, responsive UI design system
 5. **Test History & Pagination (100%)** - Filtering, sorting, search functionality
 6. **Phase 1 Gameplay Fixes (100%)** - Canvas focus, keyboard event dispatch, smart loading
+7. **PRD Update Document (100%)** - Comprehensive spec for DOM-based DreamUp game support
+8. **Report View Styling (50%)** - Header and helper functions styled with Tailwind
 
-### 🟡 Testing Required
-- **Keyboard Input System** (NEEDS VERIFICATION)
+### 🟡 In Progress / Needs Testing
+- **Keyboard Input System** (BLOCKED - Awaiting Debug Output)
   - Implementation: Complete ✅
-  - Testing: Pending ⏳
-  - Status: Ready for non-headless browser testing
+  - Enhanced Debugging: Complete ✅
+  - Testing: Pending - Need to run with new debug logs ⏳
+  - Status: Canvas focus verification failing, cause unknown
 
 ### 🔵 Pending Enhancements
-- Report view Tailwind styling (UI polish)
-- Phase 2: Visual verification (screenshot diff)
-- Phase 3: Extended gameplay duration and polish
+- Complete report view Tailwind styling (summary, metrics, collapsible sections, actions)
+- Implement PRD Update Phase 1: Refactor canvas-specific code
+- Phase 2: Add game type detection (canvas vs DOM)
+- Phase 3: Input schema support
+- Phase 4: DOM interaction support
+- Phase 5: Testing with DreamUp games
 
 ---
 
-## Most Recent Session (2025-11-03 19:00-19:35)
+## Most Recent Session (2025-11-03 20:00-20:48)
 
 ### Major Accomplishments
 
-**1. Canvas Focus Management** ✅
-- Added `FocusGameCanvas()` method in `ui_detection.go:435-467`
-- Sets `tabindex="0"` on canvas via JavaScript
-- Explicitly focuses canvas element
-- Verifies focus was successful
+**1. PRD Update Document Created** ✅
+- File: `.taskmaster/docs/prd-update.md` (537 lines)
+- Purpose: Document updated requirements for DreamUp DOM-based games
+- Key sections:
+  - Executive summary of architectural differences
+  - Updated functional requirements (dual-mode, input schema, DOM interaction)
+  - Technical architecture changes and refactoring plan
+  - 5-phase implementation strategy
+  - Comparison tables and code examples
 
-**2. JavaScript-Based Keyboard Event Dispatch** ✅
-- Added `SendKeyboardEventToCanvas()` in `ui_detection.go:469-541`
-- Uses JavaScript `dispatchEvent()` API instead of chromedp
-- Creates proper KeyboardEvent objects with keydown/keyup
-- Sends events to both canvas AND window for compatibility
-- Maps special keys (ArrowUp, Space, etc.) correctly
-
-**3. Smart Canvas Ready Detection** ✅
-- Added `WaitForGameReady()` in `ui_detection.go:543-615`
-- Polls every 500ms until canvas is rendered
-- Checks for non-transparent pixels (actual content)
-- Replaces fixed 3-second delay with adaptive polling
-- 10-second timeout with graceful fallback
-
-**4. Updated Gameplay Loop** ✅
-- Replaced `chromedp.KeyEvent()` with canvas-focused dispatch
-- Added smart game ready detection
-- Added canvas focus before gameplay
-- Comprehensive logging for debugging
-- Better error handling and progress updates
+**Why this matters**: Original PRD assumed canvas-rendered games, but DreamUp uses DOM for UI elements. Need dual-mode to test both external HTML5 and DreamUp games.
 
 ---
 
-## Critical Bug Fix
+**2. Report View Tailwind CSS Styling** ✅ (Partial)
+- Styled main container with responsive layout
+- Styled report header with card design and grid
+- Added `statusBadgeClass()` helper for colored badges
+- Added `scoreColorClass()` helper for score display
+- Dark mode support throughout
 
-### Problem (Identified in Previous Session)
-User feedback: "in the non-headless browser i could actually see the game did load -- you didn't give it enough time. And you never pressed any controls"
+**Improvements Made**:
+- Report header: `frontend/src/Main.elm:1694-1728`
+  - Card-based design with shadow
+  - Responsive grid (1/2/3 columns)
+  - Colored status badges (green/red/blue)
+  - Prominent score display
 
-### Root Cause
-1. Canvas elements not focusable by default
-2. `chromedp.KeyEvent()` sends to document, not canvas
-3. Fixed delays didn't account for variable load times
-4. No way to verify inputs reached the game
+---
 
-### Solution Implemented (Phase 1)
-1. ✅ Make canvas focusable with tabindex
-2. ✅ Explicitly focus canvas before gameplay
-3. ✅ Use JavaScript dispatchEvent() to send events to canvas
-4. ✅ Wait for canvas to actually render before sending inputs
-5. ✅ Add detailed logging for debugging
+**3. Cookie Consent Handling Disabled** ✅
+- File: `cmd/server/main.go:326-343`
+- Reason: Was clicking game recommendation links instead of actual consent
+- Resolution: Disabled entirely to prevent navigation to wrong games
 
-### Testing Required
-- Run test with headless=false
-- Watch browser window to verify controls work
-- Check server logs for successful focus/dispatch
-- Confirm game responds to keyboard inputs
+---
+
+**4. Enhanced Canvas Focus Debugging** ✅
+- File: `internal/agent/ui_detection.go:437-520`
+- Added JSON result parsing for detailed error messages
+- Added iframe detection support
+- Added console logging for browser DevTools visibility
+- Better error reporting with reasons and context
+
+---
+
+**5. Package Manager Migration** ✅
+- Switched from npm to pnpm for frontend
+- Deleted `package-lock.json`
+- Added `pnpm-lock.yaml`
+
+---
+
+## Critical Bug Analysis
+
+### Problem: Keyboard Events Not Reaching Canvas (ONGOING)
+
+**Symptoms**:
+- All keyboard events fail: "Warning: Failed to send key X to canvas"
+- Canvas focus verification fails: "Warning: Could not focus canvas"
+- Game loads correctly but doesn't respond to inputs
+
+**Evidence** (from `/tmp/server.log`):
+```
+2025/11/03 20:24:10 Focusing game canvas...
+2025/11/03 20:24:10 Warning: Could not focus canvas, keyboard inputs may not work
+2025/11/03 20:24:11 Warning: Failed to send key ArrowUp to canvas
+```
+
+**Root Cause**: `FocusGameCanvas()` returns `false` - canvas exists but focus verification fails
+
+**Solutions Attempted**:
+1. ✅ Fixed Space key mapping (`key: ' '` instead of `'Space'`)
+2. ✅ Removed blocking `WaitForGameReady()` call
+3. ✅ Disabled cookie consent (was causing navigation)
+4. ✅ Added enhanced debugging with JSON results
+5. ⏳ **Next**: Test with new debug output to understand failure reason
+
+**Status**: Awaiting manual testing in non-headless browser with DevTools open
 
 ---
 
 ## Project History (Recent Sessions)
+
+### Session: 2025-11-03 20:00-20:48 - PRD Update & Report Styling
+- Created comprehensive PRD update for DOM-based games
+- Styled report view header with Tailwind CSS
+- Enhanced canvas focus debugging
+- Disabled problematic cookie consent handling
+- Migrated to pnpm package manager
+
+### Session: 2025-11-03 19:00-19:35 - Phase 1 Gameplay Keyboard Fixes
+- Added `FocusGameCanvas()` for canvas focus management
+- Added `SendKeyboardEventToCanvas()` with JavaScript dispatch
+- Added `WaitForGameReady()` for smart canvas detection
+- Updated gameplay loop to use new methods
+- Fixed Space key event mapping
 
 ### Session: 2025-01-03 18:00-18:52 - Tailwind UI Integration
 - Installed Tailwind CSS v4 with Vite plugin
 - Removed 1500+ lines of embedded CSS
 - Refactored all Elm views with utility classes
 - Discovered keyboard input bug during testing
-- Created TODOS.md with 4-phase fix plan
 
 ### Session: 2025-11-03 17:00-17:40 - E2E Integration
 - Created REST API server with CORS support
 - Implemented real-time progress tracking (10 stages)
 - Thread-safe in-memory job tracking
 - Full frontend-backend integration working
-- Graceful shutdown and error handling
-
-### Session: 2025-11-03 15:00-17:00 - Elm Frontend Completion
-- Completed all 8 main tasks (100%)
-- Test submission, status tracking, reports
-- Screenshot viewer, console log viewer
-- Test history with pagination and filtering
-- Responsive design, error handling
 
 ---
 
 ## Next Steps (Priority Order)
 
 ### 🔥 Immediate - This Session
-1. **Test keyboard inputs in non-headless browser** (CRITICAL)
+1. **Test keyboard inputs with new debug output** (CRITICAL)
    - Submit test with headless=false
-   - Watch browser window
-   - Verify keyboard controls work
-   - Check logs for successful dispatch
+   - Open browser DevTools console
+   - Look for `[FocusGameCanvas]` console logs
+   - Check server logs for detailed error messages
+   - Determine why canvas focus verification fails
 
-2. **Iterate if needed**
-   - Debug any remaining input issues
-   - Adjust key event properties if necessary
-   - Add more detailed logging
+2. **Debug canvas focus failure**
+   - Review DevTools console output
+   - Check if canvas is in iframe
+   - Verify tabindex and focus() calls
+   - May need iframe navigation handling
+   - May need longer wait times
 
 ### 📋 Short-term - Next Session
-3. **Implement Phase 2: Visual Verification**
-   - Create `internal/agent/verification.go`
-   - Screenshot comparison before/after inputs
-   - Detect if game is frozen/unresponsive
-   - Log warnings for debugging
+3. **Complete report view Tailwind styling**
+   - `viewReportSummary`: Add card layout with grid
+   - `viewMetrics`: Style progress bars and scores
+   - `viewCollapsibleSection`: Improve button and content styling
+   - `viewReportActions`: Style action buttons
 
-4. **Style report view page with Tailwind**
-   - Apply consistent card layouts
-   - Match other views' styling
-   - Professional presentation
+4. **Begin PRD Update Phase 1**
+   - Create `internal/agent/canvas_interactions.go`
+   - Extract `FocusGameCanvas()`, `SendKeyboardEventToCanvas()`, etc.
+   - Create `internal/agent/game_type.go`
+   - Implement `GameType` enum
 
 ### 🎯 Medium-term
-5. **Phase 3: Gameplay Improvements**
-   - Extend duration to 15-20 seconds
-   - More realistic input patterns
-   - Better timing and polish
+5. **Phase 2: Game Type Detection**
+   - Implement `DetectGameType()` function
+   - Add `HasDreamUpPatterns()` helper
+   - Test with canvas and DOM games
 
-6. **Persistent Storage**
+6. **Phase 3: Input Schema Support**
+   - Create `InputSchema` parser
+   - Support JSON and natural language formats
+   - Update gameplay loop to use schema
+
+7. **Phase 4: DOM Interaction Support**
+   - Create `window_interactions.go`
+   - Create `dom_interactions.go`
+   - Unified dispatcher with mode selection
+
+8. **Persistent Storage**
    - Redis or PostgreSQL integration
    - Survive server restarts
    - Enable historical analysis
-
-7. **Deployment**
-   - Docker containerization
-   - CI/CD pipeline
-   - Production deployment
 
 ---
 
 ## Task-Master Status
 - **Main tasks**: 8/8 complete (100%)
-- **Subtasks**: 0/32 (not tracking backend/gameplay work)
-- **Current work**: Tracked via TODOS.md and todo list
+- **Subtasks**: 0/32 (Elm tasks only, backend work not tracked)
+- **Current work**: Beyond original scope, guided by PRD update document
 
 ## Current Todos
 - ✅ Integrate Tailwind CSS v4 with Vite
@@ -172,24 +219,32 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 - ✅ Implement SendKeyboardEventToCanvas() with JavaScript dispatch
 - ✅ Implement WaitForGameReady() for smart load detection
 - ✅ Update gameplay loop to use new canvas input methods
-- 🚧 Test gameplay fixes with non-headless browser
-- 📋 Style report view page with Tailwind
+- ✅ Fix Space key event mapping
+- ✅ Disable cookie consent to prevent navigation issues
+- ✅ Add detailed canvas focus debugging and iframe support
+- ✅ Create PRD update document for DOM-based game support
+- ✅ Style report view header with Tailwind CSS
+- 🚧 Test gameplay fixes with non-headless browser (AWAITING DEBUG OUTPUT)
+- 📋 Complete report view styling (summary, metrics, sections, actions)
+- 📋 Implement PRD Update Phase 1: Refactor canvas code
 
 ---
 
 ## Key Files
 
 ### Recently Modified (This Session)
-- `internal/agent/ui_detection.go:435-615` - Three new methods
-- `cmd/server/main.go:367-431` - Updated gameplay loop
-- `log_docs/PROJECT_LOG_2025-11-03_phase1-gameplay-keyboard-fixes.md` - Session log
+- `.taskmaster/docs/prd-update.md:1-537` - NEW comprehensive PRD document
+- `frontend/src/Main.elm:1649` - Report container styling
+- `frontend/src/Main.elm:1694-1728` - Report header card design
+- `frontend/src/Main.elm:2505-2530` - New helper functions
+- `cmd/server/main.go:326-343` - Disabled cookie consent
+- `internal/agent/ui_detection.go:437-520` - Enhanced canvas focus debugging
+- `log_docs/PROJECT_LOG_2025-11-03_prd-update-and-report-styling.md` - Session log
 
 ### Previous Session
-- `frontend/vite.config.js` - Tailwind plugin
-- `frontend/index.html` - Removed CSS
-- `frontend/src/Main.elm` - Tailwind classes
-- `frontend/src/style.css` - NEW
-- `docs/TODOS.md` - NEW
+- `internal/agent/ui_detection.go:435-615` - Three new methods (focus, dispatch, ready)
+- `cmd/server/main.go:367-431` - Updated gameplay loop
+- `log_docs/PROJECT_LOG_2025-11-03_phase1-gameplay-keyboard-fixes.md` - Previous session log
 
 ### Core Architecture
 - `cmd/server/main.go` - REST API server
@@ -203,7 +258,7 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 ## Performance Metrics
 
 ### Frontend
-- Build time: ~2-3s cold, <1s HMR
+- Build time: ~2-3s cold, <1s HMR (pnpm)
 - Tailwind generation: ~27ms
 - Bundle size: TBD
 
@@ -213,9 +268,9 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 - API response: <100ms (status checks)
 
 ### Code Stats
-- Frontend: ~2800 lines Elm (reduced from ~3500)
-- Backend: ~2000 lines Go
-- Net reduction: -700 lines (Tailwind migration)
+- Frontend: ~2850 lines Elm (partial report styling added)
+- Backend: ~2050 lines Go (enhanced debugging added)
+- PRD Update: 537 lines comprehensive specification
 
 ---
 
@@ -225,6 +280,7 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 - **Elm 0.19.1**: Type-safe functional UI
 - **Tailwind CSS v4**: Utility-first styling
 - **Vite**: Fast build tooling
+- **pnpm**: Fast, efficient package manager
 - **Browser.application**: SPA routing
 
 ### Backend Stack
@@ -243,22 +299,32 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 
 ## Known Issues & Limitations
 
+### Current Issues
+- ❌ **Keyboard inputs don't reach canvas** - Canvas focus verification fails, root cause unknown
+  - Status: Enhanced debugging added, awaiting test
+  - Impact: Games load but don't respond to automated inputs
+  - Workaround: Manual keyboard input works
+
 ### Resolved ✅
-- ~~Keyboard inputs don't reach canvas~~ - Fixed with JavaScript dispatch
-- ~~Fixed delay doesn't wait for games~~ - Fixed with smart detection
+- ~~Cookie consent clicks wrong elements~~ - Disabled entirely
+- ~~Space key event properties wrong~~ - Fixed key mapping
+- ~~Fixed delay doesn't wait for games~~ - Removed blocking call
 - ~~Headless mode always on~~ - Fixed with parameter
 
-### Current Limitations
+### Limitations
 - No persistent storage (in-memory only)
 - No authentication/authorization
 - No rate limiting
 - Single-instance only (no clustering)
+- Canvas games only (DOM support planned in PRD)
 
 ### Future Improvements
-- Vision-based AI gameplay (Phase 4)
+- Dual-mode game type detection (PRD Phase 2)
+- Input schema support (PRD Phase 3)
+- DOM-based game interaction (PRD Phase 4)
+- Vision-based AI gameplay
 - Multi-game type detection
 - Adaptive input strategies
-- Historical analysis and trends
 
 ---
 
@@ -269,17 +335,19 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 - Go error handling throughout
 - Comprehensive logging
 - Detailed comments
+- Enhanced debugging for troubleshooting
 
 ### Testing Strategy
 - Manual E2E testing (current)
 - Non-headless browser verification (next)
+- Browser DevTools debugging
 - Unit tests (planned)
 - Integration tests (planned)
 
 ### Documentation
 - Session logs for every session
 - Current progress summary (this file)
-- TODOS.md for tactical planning
+- Comprehensive PRD update document
 - Code comments for clarity
 
 ---
@@ -289,8 +357,8 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 ### Completed Features
 1. ✅ Browser automation with chromedp
 2. ✅ UI pattern detection (start buttons, canvas, cookies)
-3. ✅ Cookie consent handling
-4. ✅ Gameplay simulation (now with working inputs!)
+3. ✅ Cookie consent handling (now disabled)
+4. ✅ Gameplay simulation (keyboard dispatch implemented)
 5. ✅ Screenshot capture
 6. ✅ Console log collection
 7. ✅ AI evaluation with Claude
@@ -299,66 +367,109 @@ User feedback: "in the non-headless browser i could actually see the game did lo
 10. ✅ Real-time progress tracking
 11. ✅ Test history with pagination
 12. ✅ Canvas keyboard event dispatch
+13. ✅ Enhanced canvas focus debugging
+14. ✅ PRD update for DOM-based games
 
 ### Remaining Goals
-- [ ] Verify keyboard inputs work in practice
-- [ ] Visual verification (Phase 2)
-- [ ] Report view Tailwind styling
+- [ ] Verify keyboard inputs reach canvas (BLOCKED - awaiting debug)
+- [ ] Complete report view Tailwind styling
+- [ ] Implement PRD Phases 1-5 (dual-mode support)
+- [ ] Test with DreamUp games
 - [ ] Persistent storage
 - [ ] Production deployment
 
 ---
 
-**Commit**: d9ae6db - feat: implement Phase 1 gameplay keyboard fixes with canvas event dispatch
-**Branch**: master (4 commits ahead of origin)
-**Next Priority**: Manual testing in non-headless browser to verify keyboard controls actually work!
+**Commit**: f5df74d - docs: add PRD update for DOM-based games and improve report view styling
+**Branch**: master (5 commits ahead of origin)
+**Next Priority**: Test keyboard inputs with new debug output to understand why canvas focus fails!
 
 ---
 
-## How to Test
+## How to Test Keyboard Inputs
 
 ### Quick Test
 ```bash
-# 1. Start server (if not running)
-./server
+# 1. Ensure servers are running
+./server                    # Backend on :8080
+cd frontend && pnpm run dev # Frontend on :3000
 
-# 2. Open frontend
-# http://localhost:3000
-
-# 3. Submit test with:
-# - Any game URL (e.g., https://play.famobi.com/wrapper/bubble-tower-3d/A1000-10)
+# 2. Submit test via frontend
+# - URL: https://www.poki.com/en/g/subway-surfers
 # - Headless mode: UNCHECKED
 # - Max duration: 60s
 
-# 4. Watch browser window open
-# - Game should load
-# - You should see keyboard controls working!
-# - Character/game should respond to inputs
+# 3. Open browser DevTools console (F12)
+# - Look for [FocusGameCanvas] logs
+# - Should show:
+#   - Canvas found in main document or iframe
+#   - Tabindex set
+#   - Focus called
+#   - Focus verification result
 
-# 5. Check server logs
+# 4. Check server logs
 tail -f /tmp/server.log
 # Look for:
-# - "Game canvas is ready!"
-# - "Canvas focused successfully!"
-# - No errors about keyboard events
+# - "Focusing game canvas..."
+# - Success or detailed error message
+# - Keyboard event dispatch attempts
 ```
 
 ### What Success Looks Like
 - ✅ Browser window opens and game loads
-- ✅ Canvas gets focus (may see outline)
+- ✅ DevTools console shows canvas found and focused
+- ✅ Server logs show "Canvas focused successfully!"
 - ✅ Game responds to arrow keys and space
 - ✅ Character moves, jumps, or interacts
-- ✅ Logs show successful event dispatch
 - ✅ AI evaluation receives actual gameplay data
 
 ### What Failure Looks Like
+- ❌ Canvas found but focus verification fails
+- ❌ Error in logs: "canvas focus failed: <reason>"
 - ❌ Game loads but doesn't respond to inputs
-- ❌ Errors in logs about canvas not found
-- ❌ "Warning: Could not focus canvas"
 - ❌ Game state doesn't change during gameplay
 
-If testing fails, check:
-1. Server logs for error messages
-2. Browser console for JavaScript errors
-3. Canvas element actually exists on page
-4. Game-specific input requirements
+### Debug Information to Gather
+1. Browser DevTools console output
+2. Server log error messages
+3. Canvas element properties (tabindex, activeElement)
+4. Whether canvas is in iframe
+5. Any JavaScript errors
+
+---
+
+## PRD Update Implementation Roadmap
+
+### Phase 1: Refactor Canvas Code (1 day)
+- Extract canvas-specific methods to `canvas_interactions.go`
+- Create `game_type.go` with enums
+- Update imports in main.go
+- Verify existing tests pass
+
+### Phase 2: Game Type Detection (0.5 days)
+- Implement `DetectGameType()` function
+- Add `HasDreamUpPatterns()` helper
+- Add `CountInteractiveElements()` helper
+- Test with canvas and DOM games
+
+### Phase 3: Input Schema (1 day)
+- Create `input_schema.go`
+- Implement JSON parser
+- Implement natural language parser with LLM
+- Update gameplay loop to use schema
+
+### Phase 4: DOM Interaction (1 day)
+- Create `window_interactions.go`
+- Create `dom_interactions.go`
+- Implement unified dispatcher
+- Test with window events
+
+### Phase 5: Testing (1 day)
+- Test with external canvas games
+- Test with DreamUp DOM games
+- Verify dual-mode detection
+- Update documentation
+
+---
+
+**End of Current Progress Summary**
