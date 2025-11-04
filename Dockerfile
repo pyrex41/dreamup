@@ -1,41 +1,48 @@
 ARG GO_VERSION=1.24
-FROM golang:${GO_VERSION}-bookworm as builder
+FROM golang:${GO_VERSION}-alpine as builder
+
+# Install build dependencies for SQLite (CGO)
+RUN apk add --no-cache gcc musl-dev sqlite-dev
 
 WORKDIR /usr/src/app
 COPY go.mod go.sum ./
 RUN go mod download && go mod verify
 COPY . .
 
-# Build the server binary from cmd/server
-RUN go build -v -o /run-app ./cmd/server
+# Build the server binary from cmd/server with SQLite support
+RUN CGO_ENABLED=1 go build -v -o /run-app ./cmd/server
 
 
 # Build frontend
-FROM node:20-bookworm as frontend-builder
+FROM node:20-alpine as frontend-builder
 
 WORKDIR /app
 
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Install Elm compiler
-RUN curl -L -o elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
+RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/binary-for-linux-64-bit.gz && \
     gunzip elm.gz && \
     chmod +x elm && \
     mv elm /usr/local/bin/
 
-COPY frontend/package*.json ./
-RUN npm ci
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY frontend/ ./
-RUN npm run build
+RUN pnpm run build
 
 
-FROM debian:bookworm
+FROM alpine:latest
 
-# Install Chrome dependencies for headless browser
-RUN apt-get update && apt-get install -y \
+# Install runtime dependencies
+RUN apk add --no-cache \
     ca-certificates \
     chromium \
-    chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+    chromium-chromedriver \
+    sqlite-libs \
+    tzdata
 
 # Create directories
 RUN mkdir -p /data /var/www/html
@@ -47,6 +54,8 @@ COPY --from=frontend-builder /app/dist /var/www/html
 ENV DB_PATH=/data/dreamup.db
 ENV PORT=8080
 ENV STATIC_DIR=/var/www/html
+ENV CHROME_BIN=/usr/bin/chromium-browser
+ENV CHROME_PATH=/usr/lib/chromium/
 
 EXPOSE 8080
 

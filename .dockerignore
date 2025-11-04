@@ -36,11 +36,11 @@ lambda-bootstrap
 !**/go.mod
 !**/go.sum
 !**/package.json
-!**/package-lock.json
+!**/pnpm-lock.yaml
 !**/elm.json
 !**/.taskmaster/**/*.json
 !**/frontend/package.json
-!**/frontend/package-lock.json
+!**/frontend/pnpm-lock.yaml
 !**/frontend/elm.json
 # Keep frontend HTML
 !**/frontend/**/*.html
