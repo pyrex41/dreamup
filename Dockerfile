@@ -49,7 +49,8 @@ RUN apk add --no-cache \
     chromium \
     chromium-chromedriver \
     sqlite-libs \
-    tzdata
+    tzdata \
+    ffmpeg
 
 # Create directories
 RUN mkdir -p /data /var/www/html
@@ -65,6 +66,7 @@ ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROME_PATH=/usr/bin/
 ENV DISPLAY=
 ENV QT_QPA_PLATFORM=offscreen
+ENV FORCE_HEADLESS=true
 
 EXPOSE 8080
 

@@ -652,7 +652,12 @@ func (s *Server) executeTest(job *TestJob) {
 	s.updateJob(job.ID, "running", 10, "Initializing browser...")
 
 	// Create browser manager with headless setting from request
-	bm, err := agent.NewBrowserManager(job.Request.Headless)
+	// In production (Docker/deployed), always use headless mode regardless of request
+	headless := job.Request.Headless
+	if os.Getenv("FORCE_HEADLESS") == "true" {
+		headless = true
+	}
+	bm, err := agent.NewBrowserManager(headless)
 	if err != nil {
 		s.updateJob(job.ID, "failed", 100, fmt.Sprintf("Failed to create browser: %v", err))
 		return
