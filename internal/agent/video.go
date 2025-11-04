@@ -133,23 +133,28 @@ func (vr *VideoRecorder) handleFrame(frameEvent *page.EventScreencastFrame) {
 // StopRecording stops capturing frames
 func (vr *VideoRecorder) StopRecording() error {
 	vr.mu.Lock()
-	defer vr.mu.Unlock()
-
 	if !vr.IsRecording {
+		vr.mu.Unlock()
 		return fmt.Errorf("no recording in progress")
 	}
 
-	// Stop screencast
+	// Set recording to false first to stop accepting new frames
+	vr.IsRecording = false
+	vr.mu.Unlock()
+
+	// Stop screencast without holding the mutex
+	// This allows handleFrame to complete any pending frame processing
 	if err := chromedp.Run(vr.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
 		return page.StopScreencast().Do(ctx)
 	})); err != nil {
 		return fmt.Errorf("failed to stop screencast: %w", err)
 	}
 
-	vr.IsRecording = false
+	vr.mu.Lock()
 	if vr.cancel != nil {
 		vr.cancel()
 	}
+	vr.mu.Unlock()
 
 	return nil
 }

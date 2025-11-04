@@ -258,10 +258,10 @@ init flags url key =
         cmd =
             case route of
                 ReportView reportId ->
-                    fetchReport ("http://localhost:8080/api") reportId
+                    fetchReport "/api" reportId
 
                 TestHistory ->
-                    fetchTestHistory ("http://localhost:8080/api") initTestHistory
+                    fetchTestHistory "/api" initTestHistory
 
                 _ ->
                     Cmd.none
@@ -1051,16 +1051,28 @@ fetchReport apiBaseUrl reportId =
 fetchTestHistory : String -> TestHistoryState -> Cmd Msg
 fetchTestHistory apiBaseUrl history =
     let
+        statusFilter =
+            Maybe.withDefault "all" history.statusFilter
+
         queryParams =
-            [ "page=" ++ String.fromInt history.currentPage
-            , "limit=" ++ String.fromInt history.itemsPerPage
-            ]
+            [ "status=" ++ statusFilter ]
                 |> String.join "&"
     in
     getWithCors
-        (apiBaseUrl ++ "/reports?" ++ queryParams)
-        (Decode.list reportSummaryDecoder)
+        (apiBaseUrl ++ "/tests/list?" ++ queryParams)
+        (Decode.list testHistoryItemDecoder)
         TestHistoryFetched
+
+
+testHistoryItemDecoder : Decode.Decoder ReportSummary
+testHistoryItemDecoder =
+    Decode.map6 ReportSummary
+        (Decode.field "reportId" Decode.string |> Decode.maybe |> Decode.map (Maybe.withDefault ""))
+        (Decode.field "gameUrl" Decode.string)
+        (Decode.field "createdAt" Decode.string)
+        (Decode.field "status" Decode.string)
+        (Decode.field "score" Decode.int |> Decode.maybe)
+        (Decode.field "duration" Decode.int)
 
 
 reportSummaryDecoder : Decode.Decoder ReportSummary
@@ -1427,25 +1439,19 @@ viewTestSubmission model =
         , div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
             [ h3 [ class "text-xl font-bold text-gray-900 mb-2" ] [ text "Example Games (Click to Test)" ]
             , p [ class "text-sm text-gray-600 mb-6" ] [ text "These games have been tested and work well with our system:" ]
-            , div [ class "grid grid-cols-1 md:grid-cols-3 gap-4" ]
+            , div [ class "grid grid-cols-1 md:grid-cols-2 gap-4" ]
                 [ viewExampleGame
-                    "Free Rider 2"
-                    "Kongregate - Physics-based bike game"
-                    "https://www.kongregate.com/en/games/onemorelevel/free-rider-2"
-                    "65/100"
+                    "Pac-Man"
+                    "Classic arcade game"
+                    "https://funhtml5games.com/pacman/index.html"
+                    "85/100"
                     "success"
                 , viewExampleGame
-                    "Subway Surfers"
-                    "Poki - Endless runner game"
-                    "https://www.poki.com/en/g/subway-surfers"
-                    "40/100"
-                    "warning"
-                , viewExampleGame
-                    "Agar.io"
-                    "Simple multiplayer game"
-                    "https://agar.io"
-                    "Testing"
-                    "info"
+                    "2048"
+                    "Number puzzle game"
+                    "https://funhtml5games.com/2048/index.html"
+                    "90/100"
+                    "success"
                 ]
             ]
         ]
@@ -2135,21 +2141,21 @@ truncateMessage message maxLength =
 {-| Subtask 4: Report Actions -}
 viewReportActions : Report -> Html Msg
 viewReportActions report =
-    div [ class "report-actions" ]
-        [ h3 [] [ text "Actions" ]
-        , div [ class "action-buttons" ]
+    div [ class "bg-white rounded-lg shadow-md p-6 border border-gray-200" ]
+        [ h3 [ class "text-xl font-bold text-gray-900 mb-4" ] [ text "Actions" ]
+        , div [ class "flex flex-wrap gap-3" ]
             [ button
-                [ class "action-btn primary"
+                [ class "inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors duration-200"
                 , onClick (CopyReportLink report.reportId)
                 ]
                 [ text "📋 Copy Share Link" ]
             , button
-                [ class "action-btn secondary"
+                [ class "inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md transition-colors duration-200"
                 , onClick (DownloadReportJson report)
                 ]
                 [ text "💾 Download JSON" ]
             , button
-                [ class "action-btn secondary"
+                [ class "inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md transition-colors duration-200"
                 , onClick (RerunTest report.gameUrl)
                 ]
                 [ text "🔄 Re-run Test" ]
@@ -2691,16 +2697,13 @@ statusBadgeClass status =
 
 
 formatDuration : Int -> String
-formatDuration durationMs =
+formatDuration durationSeconds =
     let
-        seconds =
-            durationMs // 1000
-
         mins =
-            seconds // 60
+            durationSeconds // 60
 
         secs =
-            remainderBy 60 seconds
+            remainderBy 60 durationSeconds
     in
     if mins > 0 then
         String.fromInt mins ++ "m " ++ String.fromInt secs ++ "s"

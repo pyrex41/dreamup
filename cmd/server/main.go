@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dreamup/qa-agent/internal/agent"
+	"github.com/dreamup/qa-agent/internal/db"
 	"github.com/dreamup/qa-agent/internal/evaluator"
 	"github.com/dreamup/qa-agent/internal/reporter"
 	"github.com/google/uuid"
@@ -47,6 +48,18 @@ type TestStatus struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// TestHistoryItem represents a test in the history list
+type TestHistoryItem struct {
+	TestID    string    `json:"testId"`
+	GameURL   string    `json:"gameUrl"`
+	Status    string    `json:"status"`
+	Score     int       `json:"score"`
+	Duration  int       `json:"duration"`
+	ReportID  string    `json:"reportId,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // TestJob represents a running test
 type TestJob struct {
 	ID        string
@@ -68,13 +81,15 @@ type Server struct {
 	mu     sync.RWMutex
 	port   string
 	apiKey string
+	db     *db.Database
 }
 
-func NewServer(port, apiKey string) *Server {
+func NewServer(port, apiKey string, database *db.Database) *Server {
 	return &Server{
 		jobs:   make(map[string]*TestJob),
 		port:   port,
 		apiKey: apiKey,
+		db:     database,
 	}
 }
 
@@ -149,6 +164,11 @@ func (s *Server) handleTestSubmit(w http.ResponseWriter, r *http.Request) {
 	s.jobs[testID] = job
 	s.mu.Unlock()
 
+	// Persist to database
+	if err := s.db.CreateTest(testID, req.URL, "pending"); err != nil {
+		log.Printf("Warning: Failed to persist test to database: %v", err)
+	}
+
 	// Start test execution in background
 	go s.executeTest(job)
 
@@ -198,22 +218,49 @@ func (s *Server) handleTestReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// First check in-memory jobs for running tests
 	s.mu.RLock()
 	job, exists := s.jobs[testID]
 	s.mu.RUnlock()
 
-	if !exists {
+	if exists && job.Report != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(job.Report)
+		return
+	}
+
+	// If not in memory, check database for completed tests
+	// Try by testID first, then by reportID
+	dbTest, err := s.db.GetTest(testID)
+	if err != nil {
+		log.Printf("Error fetching test from database: %v", err)
+		http.Error(w, "Failed to fetch test", http.StatusInternalServerError)
+		return
+	}
+
+	// If not found by testID, try by reportID
+	if dbTest == nil {
+		dbTest, err = s.db.GetTestByReportID(testID)
+		if err != nil {
+			log.Printf("Error fetching test by report ID from database: %v", err)
+			http.Error(w, "Failed to fetch test", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if dbTest == nil {
 		http.Error(w, "Test not found", http.StatusNotFound)
 		return
 	}
 
-	if job.Report == nil {
+	if dbTest.ReportData == "" {
 		http.Error(w, "Report not ready", http.StatusNotFound)
 		return
 	}
 
+	// Return the stored report data directly
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job.Report)
+	w.Write([]byte(dbTest.ReportData))
 }
 
 // Serve screenshot files
@@ -287,23 +334,58 @@ func (s *Server) handleVideo(w http.ResponseWriter, r *http.Request) {
 
 // List all tests
 func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	// Get query parameters
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "all"
+	}
 
-	tests := make([]TestStatus, 0, len(s.jobs))
-	for _, job := range s.jobs {
-		tests = append(tests, TestStatus{
-			TestID:    job.ID,
-			Status:    job.Status,
-			Progress:  job.Progress,
-			Message:   job.Message,
-			CreatedAt: job.CreatedAt,
-			UpdatedAt: job.UpdatedAt,
+	// Fetch from database
+	dbTests, err := s.db.ListTests(status, 100, 0)
+	if err != nil {
+		log.Printf("Error fetching tests from database: %v", err)
+		http.Error(w, "Failed to fetch tests", http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to response format
+	tests := make([]TestHistoryItem, 0, len(dbTests))
+	for _, dbTest := range dbTests {
+		updatedAt := dbTest.CreatedAt
+		if dbTest.CompletedAt != nil {
+			updatedAt = *dbTest.CompletedAt
+		}
+
+		tests = append(tests, TestHistoryItem{
+			TestID:    dbTest.ID,
+			GameURL:   dbTest.GameURL,
+			Status:    dbTest.Status,
+			Score:     dbTest.Score,
+			Duration:  dbTest.Duration,
+			ReportID:  dbTest.ReportID,
+			CreatedAt: dbTest.CreatedAt,
+			UpdatedAt: updatedAt,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tests)
+}
+
+// Helper to calculate progress based on status
+func calculateProgress(status string) int {
+	switch status {
+	case "pending":
+		return 0
+	case "running":
+		return 50
+	case "completed":
+		return 100
+	case "failed":
+		return 100
+	default:
+		return 0
+	}
 }
 
 // Execute a test job
@@ -601,6 +683,12 @@ func (s *Server) executeTest(job *TestJob) {
 	}
 	s.mu.Unlock()
 
+	// Persist completion to database
+	duration := int(time.Since(job.CreatedAt).Seconds())
+	if err := s.db.CompleteTest(job.ID, "completed", score.OverallScore, duration, report.ReportID, report); err != nil {
+		log.Printf("Warning: Failed to update test in database: %v", err)
+	}
+
 	log.Printf("Test %s completed with score: %d/100", job.ID, score.OverallScore)
 }
 
@@ -625,7 +713,26 @@ func main() {
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 
-	server := NewServer(port, apiKey)
+	// Initialize database
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./data/dreamup.db"
+	}
+
+	// Ensure data directory exists
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		log.Fatalf("Failed to create data directory: %v", err)
+	}
+
+	database, err := db.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer database.Close()
+
+	log.Printf("📁 Database initialized at: %s", dbPath)
+
+	server := NewServer(port, apiKey, database)
 
 	// Setup routes
 	mux := http.NewServeMux()
