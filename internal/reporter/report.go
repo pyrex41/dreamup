@@ -44,6 +44,8 @@ type Evidence struct {
 	LogSummary LogSummary `json:"log_summary"`
 	// DetectedElements are UI elements found
 	DetectedElements map[string]string `json:"detected_elements,omitempty"`
+	// PerformanceMetrics contains FPS, load time, and accessibility data
+	PerformanceMetrics *agent.PerformanceMetrics `json:"performance_metrics,omitempty"`
 }
 
 // ScreenshotInfo contains metadata about a screenshot
@@ -98,6 +100,7 @@ type ReportBuilder struct {
 	score      *evaluator.PlayabilityScore
 	detected   map[string]string
 	metadata   map[string]string
+	metrics    *agent.PerformanceMetrics
 }
 
 // NewReportBuilder creates a new report builder
@@ -140,6 +143,11 @@ func (rb *ReportBuilder) AddMetadata(key, value string) {
 	rb.metadata[key] = value
 }
 
+// SetPerformanceMetrics sets the performance metrics for the report
+func (rb *ReportBuilder) SetPerformanceMetrics(metrics *agent.PerformanceMetrics) {
+	rb.metrics = metrics
+}
+
 // Build constructs the final report
 func (rb *ReportBuilder) Build() (*Report, error) {
 	// Generate report ID
@@ -179,11 +187,12 @@ func (rb *ReportBuilder) Build() (*Report, error) {
 
 	// Build evidence
 	evidence := &Evidence{
-		Screenshots:      screenshotInfos,
-		VideoURL:         rb.videoURL,
-		ConsoleLogs:      rb.logs,
-		LogSummary:       logSummary,
-		DetectedElements: rb.detected,
+		Screenshots:        screenshotInfos,
+		VideoURL:           rb.videoURL,
+		ConsoleLogs:        rb.logs,
+		LogSummary:         logSummary,
+		DetectedElements:   rb.detected,
+		PerformanceMetrics: rb.metrics,
 	}
 
 	// Build summary

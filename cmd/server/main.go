@@ -526,7 +526,31 @@ func (s *Server) executeTest(job *TestJob) {
 		}
 	}
 
-	s.updateJob(job.ID, "running", 70, "Capturing final screenshot...")
+	s.updateJob(job.ID, "running", 70, "Collecting performance metrics...")
+
+	// Collect performance metrics (FPS, load time, accessibility)
+	log.Printf("Collecting performance metrics...")
+	metricsCollector := agent.NewMetricsCollector(bm.GetContext())
+	metrics, err := metricsCollector.CollectAll()
+	if err != nil {
+		log.Printf("Warning: Failed to collect some metrics: %v", err)
+	} else {
+		log.Printf("✓ Metrics collected:")
+		if metrics.FPS != nil {
+			log.Printf("   FPS: %.1f avg (min: %.1f, max: %.1f)",
+				metrics.FPS.AverageFPS, metrics.FPS.MinFPS, metrics.FPS.MaxFPS)
+		}
+		if metrics.LoadTime != nil {
+			log.Printf("   Load Time: %dms total", metrics.LoadTime.TotalLoadTime)
+			log.Printf("   First Contentful Paint: %.1fms", metrics.LoadTime.FirstContentfulPaint)
+		}
+		if metrics.Accessibility != nil {
+			log.Printf("   Accessibility Score: %d/100 (%d violations)",
+				metrics.Accessibility.Score, metrics.Accessibility.ViolationCount)
+		}
+	}
+
+	s.updateJob(job.ID, "running", 75, "Capturing final screenshot...")
 
 	// Wait for game state to settle
 	time.Sleep(500 * time.Millisecond)
@@ -574,6 +598,11 @@ func (s *Server) executeTest(job *TestJob) {
 	reportBuilder.SetScreenshots(screenshots)
 	reportBuilder.SetConsoleLogs(logs)
 	reportBuilder.SetScore(score)
+
+	// Set performance metrics if collected
+	if metrics != nil {
+		reportBuilder.SetPerformanceMetrics(metrics)
+	}
 
 	// Set video URL if video was recorded
 	if videoPath != "" {
