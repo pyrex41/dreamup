@@ -37,6 +37,38 @@ type TestResponse struct {
 	Status string `json:"status"`
 }
 
+// BatchTestRequest represents a batch test submission (max 10 URLs)
+type BatchTestRequest struct {
+	URLs        []string `json:"urls"`
+	MaxDuration int      `json:"maxDuration,omitempty"`
+	Headless    bool     `json:"headless"`
+}
+
+// BatchTestResponse represents the batch test submission response
+type BatchTestResponse struct {
+	BatchID string   `json:"batchId"`
+	TestIDs []string `json:"testIds"`
+	Status  string   `json:"status"`
+}
+
+// BatchTestStatus represents the status of a batch test
+type BatchTestStatus struct {
+	BatchID   string       `json:"batchId"`
+	Status    string       `json:"status"`
+	Tests     []TestStatus `json:"tests"`
+	CreatedAt time.Time    `json:"createdAt"`
+	UpdatedAt time.Time    `json:"updatedAt"`
+}
+
+// BatchJob represents a batch of test jobs
+type BatchJob struct {
+	ID        string
+	TestIDs   []string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // TestStatus represents the current status of a test
 type TestStatus struct {
 	TestID    string    `json:"testId"`
@@ -64,17 +96,19 @@ type TestJob struct {
 
 // Server manages the API and test execution
 type Server struct {
-	jobs   map[string]*TestJob
-	mu     sync.RWMutex
-	port   string
-	apiKey string
+	jobs       map[string]*TestJob
+	batchJobs  map[string]*BatchJob
+	mu         sync.RWMutex
+	port       string
+	apiKey     string
 }
 
 func NewServer(port, apiKey string) *Server {
 	return &Server{
-		jobs:   make(map[string]*TestJob),
-		port:   port,
-		apiKey: apiKey,
+		jobs:      make(map[string]*TestJob),
+		batchJobs: make(map[string]*BatchJob),
+		port:      port,
+		apiKey:    apiKey,
 	}
 }
 
@@ -304,6 +338,192 @@ func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tests)
+}
+
+// Submit a batch test (up to 10 URLs)
+func (s *Server) handleBatchTestSubmit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req BatchTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if len(req.URLs) == 0 {
+		http.Error(w, "At least one URL is required", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.URLs) > 10 {
+		http.Error(w, "Maximum 10 URLs allowed per batch", http.StatusBadRequest)
+		return
+	}
+
+	// Validate each URL
+	for _, url := range req.URLs {
+		if url == "" {
+			http.Error(w, "All URLs must be non-empty", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Set defaults
+	if req.MaxDuration == 0 {
+		req.MaxDuration = 60
+	}
+
+	// Create batch ID
+	batchID := uuid.New().String()
+	testIDs := make([]string, 0, len(req.URLs))
+
+	// Create individual test jobs for each URL
+	for _, url := range req.URLs {
+		testID := uuid.New().String()
+		ctx, cancel := context.WithCancel(context.Background())
+
+		job := &TestJob{
+			ID: testID,
+			Request: TestRequest{
+				URL:         url,
+				MaxDuration: req.MaxDuration,
+				Headless:    req.Headless,
+			},
+			Status:    "pending",
+			Progress:  0,
+			Message:   "Test queued in batch",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			ctx:       ctx,
+			cancel:    cancel,
+		}
+
+		s.mu.Lock()
+		s.jobs[testID] = job
+		s.mu.Unlock()
+
+		testIDs = append(testIDs, testID)
+
+		// Start test execution in background
+		go s.executeTest(job)
+	}
+
+	// Create batch job
+	batchJob := &BatchJob{
+		ID:        batchID,
+		TestIDs:   testIDs,
+		Status:    "running",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	s.mu.Lock()
+	s.batchJobs[batchID] = batchJob
+	s.mu.Unlock()
+
+	// Start batch status monitor
+	go s.monitorBatchStatus(batchID)
+
+	// Return batch ID and test IDs
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(BatchTestResponse{
+		BatchID: batchID,
+		TestIDs: testIDs,
+		Status:  "running",
+	})
+}
+
+// Get batch test status
+func (s *Server) handleBatchTestStatus(w http.ResponseWriter, r *http.Request) {
+	batchID := r.URL.Path[len("/api/batch-tests/"):]
+	if batchID == "" {
+		http.Error(w, "Batch ID required", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	batchJob, exists := s.batchJobs[batchID]
+	if !exists {
+		s.mu.RUnlock()
+		http.Error(w, "Batch not found", http.StatusNotFound)
+		return
+	}
+
+	// Collect status of all tests in the batch
+	tests := make([]TestStatus, 0, len(batchJob.TestIDs))
+	for _, testID := range batchJob.TestIDs {
+		if job, ok := s.jobs[testID]; ok {
+			tests = append(tests, TestStatus{
+				TestID:    job.ID,
+				Status:    job.Status,
+				Progress:  job.Progress,
+				Message:   job.Message,
+				CreatedAt: job.CreatedAt,
+				UpdatedAt: job.UpdatedAt,
+			})
+		}
+	}
+	s.mu.RUnlock()
+
+	status := BatchTestStatus{
+		BatchID:   batchJob.ID,
+		Status:    batchJob.Status,
+		Tests:     tests,
+		CreatedAt: batchJob.CreatedAt,
+		UpdatedAt: batchJob.UpdatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+// Monitor batch status and update when all tests complete
+func (s *Server) monitorBatchStatus(batchID string) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
+
+		s.mu.Lock()
+		batchJob, exists := s.batchJobs[batchID]
+		if !exists {
+			s.mu.Unlock()
+			return
+		}
+
+		// Check if all tests are complete
+		allComplete := true
+		anyFailed := false
+		for _, testID := range batchJob.TestIDs {
+			if job, ok := s.jobs[testID]; ok {
+				if job.Status != "completed" && job.Status != "failed" {
+					allComplete = false
+				}
+				if job.Status == "failed" {
+					anyFailed = true
+				}
+			}
+		}
+
+		if allComplete {
+			if anyFailed {
+				batchJob.Status = "completed_with_failures"
+			} else {
+				batchJob.Status = "completed"
+			}
+			batchJob.UpdatedAt = time.Now()
+			s.mu.Unlock()
+			return
+		}
+
+		batchJob.UpdatedAt = time.Now()
+		s.mu.Unlock()
+	}
 }
 
 // Execute a test job
@@ -647,6 +867,8 @@ func main() {
 	mux.HandleFunc("/api/reports/", server.corsMiddleware(server.handleTestReport))
 	mux.HandleFunc("/api/screenshots/", server.corsMiddleware(server.handleScreenshot))
 	mux.HandleFunc("/api/videos/", server.corsMiddleware(server.handleVideo))
+	mux.HandleFunc("/api/batch-tests", server.corsMiddleware(server.handleBatchTestSubmit))
+	mux.HandleFunc("/api/batch-tests/", server.corsMiddleware(server.handleBatchTestStatus))
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -663,10 +885,12 @@ func main() {
 		log.Printf("🌐 Listening on http://localhost:%s", port)
 		log.Printf("📊 Health check: http://localhost:%s/health", port)
 		log.Printf("📝 API endpoints:")
-		log.Printf("   POST   /api/tests        - Submit new test")
-		log.Printf("   GET    /api/tests/{id}   - Get test status")
-		log.Printf("   GET    /api/tests/list   - List all tests")
-		log.Printf("   GET    /api/reports/{id} - Get test report")
+		log.Printf("   POST   /api/tests            - Submit new test")
+		log.Printf("   GET    /api/tests/{id}       - Get test status")
+		log.Printf("   GET    /api/tests/list       - List all tests")
+		log.Printf("   GET    /api/reports/{id}     - Get test report")
+		log.Printf("   POST   /api/batch-tests      - Submit batch test (up to 10 URLs)")
+		log.Printf("   GET    /api/batch-tests/{id} - Get batch test status")
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
