@@ -603,6 +603,77 @@ func (d *UIDetector) SendKeyboardEventToCanvas(keyCode string) (bool, error) {
 	return dispatched, nil
 }
 
+// SendKeyboardEventToWindow sends a keyboard event to window and document (for DOM-based games)
+// This doesn't require a canvas element and works for games rendered with DOM elements
+func (d *UIDetector) SendKeyboardEventToWindow(keyCode string) (bool, error) {
+	script := fmt.Sprintf(`
+(function() {
+	console.log('[SendKeyToWindow] Sending key:', '%s');
+
+	const keyMappings = {
+		'ArrowUp': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+		'ArrowDown': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+		'ArrowLeft': { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
+		'ArrowRight': { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
+		' ': { key: ' ', code: 'Space', keyCode: 32 }
+	};
+
+	const inputKey = %q;
+	const mapping = keyMappings[inputKey] || {
+		key: inputKey,
+		code: 'Key' + inputKey.toUpperCase(),
+		keyCode: inputKey.charCodeAt(0)
+	};
+
+	// Create and dispatch keydown event to window and document
+	const keydownEvent = new KeyboardEvent('keydown', {
+		key: mapping.key,
+		code: mapping.code,
+		keyCode: mapping.keyCode,
+		which: mapping.keyCode,
+		bubbles: true,
+		cancelable: true,
+		composed: true
+	});
+
+	window.dispatchEvent(keydownEvent);
+	document.dispatchEvent(keydownEvent);
+	document.body?.dispatchEvent(keydownEvent);
+
+	// Small delay between keydown and keyup
+	setTimeout(function() {
+		const keyupEvent = new KeyboardEvent('keyup', {
+			key: mapping.key,
+			code: mapping.code,
+			keyCode: mapping.keyCode,
+			which: mapping.keyCode,
+			bubbles: true,
+			cancelable: true,
+			composed: true
+		});
+
+		window.dispatchEvent(keyupEvent);
+		document.dispatchEvent(keyupEvent);
+		document.body?.dispatchEvent(keyupEvent);
+	}, 50);
+
+	console.log('[SendKeyToWindow] Dispatched to window/document/body');
+	return true;
+})();
+`, keyCode, keyCode)
+
+	var dispatched bool
+	err := chromedp.Run(d.ctx,
+		chromedp.Evaluate(script, &dispatched),
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to send keyboard event %s to window: %w", keyCode, err)
+	}
+
+	return dispatched, nil
+}
+
 // WaitForGameReady polls the canvas to check if it has been rendered (not blank)
 // Returns true if canvas is ready, false if timeout reached
 func (d *UIDetector) WaitForGameReady(timeoutSeconds int) (bool, error) {

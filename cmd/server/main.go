@@ -327,26 +327,42 @@ func (s *Server) executeTest(job *TestJob) {
 	// Wait for page load
 	time.Sleep(2 * time.Second)
 
-	// DISABLED: Cookie consent handling was clicking game recommendation links
-	// instead of actual consent dialogs on sites like Poki
-	// TODO: Make cookie consent detection more specific if needed
-	// detector := agent.NewUIDetector(bm.GetContext())
-	// if clicked, err := detector.AcceptCookieConsent(); err != nil {
-	//     log.Printf("Cookie consent handling: %v", err)
-	// } else if clicked {
-	//     log.Printf("Cookie consent accepted")
-	//     time.Sleep(500 * time.Millisecond)
-	// }
+	// Remove ads and handle cookie consent with improved logic
+	log.Printf("Removing ads and handling cookie consent...")
+	if err := bm.RemoveAdsAndCookieConsent(); err != nil {
+		log.Printf("Warning: Ad blocking/cookie consent failed: %v", err)
+	} else {
+		log.Printf("Ad blocking and cookie consent handling completed")
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	detector := agent.NewUIDetector(bm.GetContext())
-	log.Printf("Skipping cookie consent to avoid navigation issues")
 
 	s.updateJob(job.ID, "running", 50, "Starting game...")
 
-	// DON'T click anything - just wait for game to load
-	// Clicking can trigger navigation to other games on sites like Poki
-	log.Printf("Skipping canvas click to avoid navigation issues...")
-	time.Sleep(2 * time.Second)
+	// Use vision + DOM to detect and click start button
+	log.Printf("Using GPT-4o vision + DOM to detect and click start button...")
+	visionDOMDetector, err := agent.NewVisionDOMDetector(bm.GetContext())
+	if err != nil {
+		log.Printf("Warning: Could not create vision DOM detector: %v", err)
+		log.Printf("Skipping start button click...")
+	} else {
+		// Take screenshot for vision analysis
+		visionScreenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextInitial)
+		if err != nil {
+			log.Printf("Warning: Could not capture screenshot for vision: %v", err)
+		} else {
+			// Detect and click start button
+			err := visionDOMDetector.DetectAndClickStartButton(visionScreenshot)
+			if err != nil {
+				log.Printf("Warning: Vision+DOM start button click failed: %v", err)
+				log.Printf("Game may require manual start or will auto-start")
+			} else {
+				log.Printf("✓ Vision+DOM successfully clicked start button")
+				time.Sleep(1 * time.Second) // Wait for click to register
+			}
+		}
+	}
 
 	s.updateJob(job.ID, "running", 55, "Waiting for game to load...")
 
@@ -354,20 +370,19 @@ func (s *Server) executeTest(job *TestJob) {
 	log.Printf("Waiting 5 seconds for game to load...")
 	time.Sleep(5 * time.Second)
 
-	// Focus the game canvas to ensure it receives keyboard events
-	log.Printf("Focusing game canvas...")
+	// Detect if game uses canvas or DOM rendering
+	log.Printf("Detecting game rendering type...")
+	var useCanvasMode bool
 	focused, err := detector.FocusGameCanvas()
-	if err != nil {
-		log.Printf("Error focusing canvas: %v", err)
-		log.Printf("Continuing anyway...")
-	} else if !focused {
-		log.Printf("Warning: Could not focus canvas, keyboard inputs may not work")
-		log.Printf("Continuing anyway...")
+	if err != nil || !focused {
+		log.Printf("No canvas detected or focus failed - using DOM/window event mode")
+		useCanvasMode = false
 	} else {
-		log.Printf("Canvas focused successfully!")
+		log.Printf("Canvas detected and focused - using canvas event mode")
+		useCanvasMode = true
 	}
 
-	// Add small delay after focus
+	// Add small delay after detection
 	time.Sleep(500 * time.Millisecond)
 
 	s.updateJob(job.ID, "running", 60, "Playing game with keyboard controls...")
@@ -377,9 +392,13 @@ func (s *Server) executeTest(job *TestJob) {
 	gameplayDuration := 10 * time.Second // Much longer gameplay
 	gameplayStart := time.Now()
 
-	log.Printf("Starting %v of interactive gameplay with canvas keyboard events...", gameplayDuration)
+	if useCanvasMode {
+		log.Printf("Starting %v of interactive gameplay with canvas keyboard events...", gameplayDuration)
+	} else {
+		log.Printf("Starting %v of interactive gameplay with window keyboard events...", gameplayDuration)
+	}
 
-	// Gameplay loop - send keyboard events directly to canvas
+	// Gameplay loop - send keyboard events to canvas or window
 	for time.Since(gameplayStart) < gameplayDuration {
 		progress := 60 + int(25*time.Since(gameplayStart).Seconds()/gameplayDuration.Seconds())
 		s.updateJob(job.ID, "running", progress, fmt.Sprintf("Playing game... %.0fs elapsed", time.Since(gameplayStart).Seconds()))
@@ -396,12 +415,19 @@ func (s *Server) executeTest(job *TestJob) {
 		}
 
 		for _, key := range gameplayActions {
-			// Use new canvas-focused keyboard event dispatch
-			sent, err := detector.SendKeyboardEventToCanvas(key)
+			var sent bool
+			var err error
+
+			if useCanvasMode {
+				sent, err = detector.SendKeyboardEventToCanvas(key)
+			} else {
+				sent, err = detector.SendKeyboardEventToWindow(key)
+			}
+
 			if err != nil {
 				log.Printf("Error sending key %s: %v", key, err)
 			} else if !sent {
-				log.Printf("Warning: Failed to send key %s to canvas", key)
+				log.Printf("Warning: Failed to send key %s", key)
 			}
 			time.Sleep(150 * time.Millisecond) // Slightly faster inputs
 		}
