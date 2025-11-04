@@ -1,0 +1,33 @@
+# fly.toml app configuration file generated for dreamup on 2025-11-04T16:50:33-06:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'dreamup'
+primary_region = 'dfw'
+
+[build]
+  [build.args]
+    GO_VERSION = '1.24.0'
+
+[env]
+  PORT = '8080'
+  DB_PATH = '/data/dreamup.db'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '4gb'
+  cpu_kind = 'shared'
+  cpus = 2
+
+# Persistent volume for SQLite database
+[mounts]
+  source = 'dreamup_data'
+  destination = '/data'
