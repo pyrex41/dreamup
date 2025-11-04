@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/dreamup/qa-agent/internal/agent"
-	"github.com/dreamup/qa-agent/internal/db"
 	"github.com/dreamup/qa-agent/internal/evaluator"
 	"github.com/dreamup/qa-agent/internal/reporter"
 	"github.com/google/uuid"
@@ -38,24 +37,48 @@ type TestResponse struct {
 	Status string `json:"status"`
 }
 
+// BatchTestRequest represents a batch test submission (max 10 URLs)
+type BatchTestRequest struct {
+	URLs        []string `json:"urls"`
+	MaxDuration int      `json:"maxDuration,omitempty"`
+	Headless    bool     `json:"headless"`
+}
+
+// BatchTestResponse represents the batch test submission response
+type BatchTestResponse struct {
+	BatchID string   `json:"batchId"`
+	TestIDs []string `json:"testIds"`
+	Status  string   `json:"status"`
+}
+
+// BatchTestStatus represents the status of a batch test
+type BatchTestStatus struct {
+	BatchID        string       `json:"batchId"`
+	Status         string       `json:"status"`
+	Tests          []TestStatus `json:"tests"`
+	TotalTests     int          `json:"totalTests"`
+	CompletedTests int          `json:"completedTests"`
+	FailedTests    int          `json:"failedTests"`
+	RunningTests   int          `json:"runningTests"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
+}
+
+// BatchJob represents a batch of test jobs
+type BatchJob struct {
+	ID        string
+	TestIDs   []string
+	Status    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 // TestStatus represents the current status of a test
 type TestStatus struct {
 	TestID    string    `json:"testId"`
 	Status    string    `json:"status"`
 	Progress  int       `json:"progress"`
 	Message   string    `json:"message,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// TestHistoryItem represents a test in the history list
-type TestHistoryItem struct {
-	TestID    string    `json:"testId"`
-	GameURL   string    `json:"gameUrl"`
-	Status    string    `json:"status"`
-	Score     int       `json:"score"`
-	Duration  int       `json:"duration"`
-	ReportID  string    `json:"reportId,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -77,19 +100,24 @@ type TestJob struct {
 
 // Server manages the API and test execution
 type Server struct {
-	jobs   map[string]*TestJob
-	mu     sync.RWMutex
-	port   string
-	apiKey string
-	db     *db.Database
+	jobs           map[string]*TestJob
+	batchJobs      map[string]*BatchJob
+	mu             sync.RWMutex
+	port           string
+	apiKey         string
+	testSemaphore  chan struct{} // Limits concurrent tests
+	maxConcurrent  int
 }
 
-func NewServer(port, apiKey string, database *db.Database) *Server {
+func NewServer(port, apiKey string) *Server {
+	maxConcurrent := 20 // Maximum 20 concurrent tests
 	return &Server{
-		jobs:   make(map[string]*TestJob),
-		port:   port,
-		apiKey: apiKey,
-		db:     database,
+		jobs:          make(map[string]*TestJob),
+		batchJobs:     make(map[string]*BatchJob),
+		port:          port,
+		apiKey:        apiKey,
+		testSemaphore: make(chan struct{}, maxConcurrent),
+		maxConcurrent: maxConcurrent,
 	}
 }
 
@@ -164,11 +192,6 @@ func (s *Server) handleTestSubmit(w http.ResponseWriter, r *http.Request) {
 	s.jobs[testID] = job
 	s.mu.Unlock()
 
-	// Persist to database
-	if err := s.db.CreateTest(testID, req.URL, "pending"); err != nil {
-		log.Printf("Warning: Failed to persist test to database: %v", err)
-	}
-
 	// Start test execution in background
 	go s.executeTest(job)
 
@@ -218,49 +241,22 @@ func (s *Server) handleTestReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First check in-memory jobs for running tests
 	s.mu.RLock()
 	job, exists := s.jobs[testID]
 	s.mu.RUnlock()
 
-	if exists && job.Report != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(job.Report)
-		return
-	}
-
-	// If not in memory, check database for completed tests
-	// Try by testID first, then by reportID
-	dbTest, err := s.db.GetTest(testID)
-	if err != nil {
-		log.Printf("Error fetching test from database: %v", err)
-		http.Error(w, "Failed to fetch test", http.StatusInternalServerError)
-		return
-	}
-
-	// If not found by testID, try by reportID
-	if dbTest == nil {
-		dbTest, err = s.db.GetTestByReportID(testID)
-		if err != nil {
-			log.Printf("Error fetching test by report ID from database: %v", err)
-			http.Error(w, "Failed to fetch test", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if dbTest == nil {
+	if !exists {
 		http.Error(w, "Test not found", http.StatusNotFound)
 		return
 	}
 
-	if dbTest.ReportData == "" {
+	if job.Report == nil {
 		http.Error(w, "Report not ready", http.StatusNotFound)
 		return
 	}
 
-	// Return the stored report data directly
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(dbTest.ReportData))
+	json.NewEncoder(w).Encode(job.Report)
 }
 
 // Serve screenshot files
@@ -334,37 +330,18 @@ func (s *Server) handleVideo(w http.ResponseWriter, r *http.Request) {
 
 // List all tests
 func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
-	// Get query parameters
-	status := r.URL.Query().Get("status")
-	if status == "" {
-		status = "all"
-	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	// Fetch from database
-	dbTests, err := s.db.ListTests(status, 100, 0)
-	if err != nil {
-		log.Printf("Error fetching tests from database: %v", err)
-		http.Error(w, "Failed to fetch tests", http.StatusInternalServerError)
-		return
-	}
-
-	// Convert to response format
-	tests := make([]TestHistoryItem, 0, len(dbTests))
-	for _, dbTest := range dbTests {
-		updatedAt := dbTest.CreatedAt
-		if dbTest.CompletedAt != nil {
-			updatedAt = *dbTest.CompletedAt
-		}
-
-		tests = append(tests, TestHistoryItem{
-			TestID:    dbTest.ID,
-			GameURL:   dbTest.GameURL,
-			Status:    dbTest.Status,
-			Score:     dbTest.Score,
-			Duration:  dbTest.Duration,
-			ReportID:  dbTest.ReportID,
-			CreatedAt: dbTest.CreatedAt,
-			UpdatedAt: updatedAt,
+	tests := make([]TestStatus, 0, len(s.jobs))
+	for _, job := range s.jobs {
+		tests = append(tests, TestStatus{
+			TestID:    job.ID,
+			Status:    job.Status,
+			Progress:  job.Progress,
+			Message:   job.Message,
+			CreatedAt: job.CreatedAt,
+			UpdatedAt: job.UpdatedAt,
 		})
 	}
 
@@ -372,31 +349,250 @@ func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tests)
 }
 
-// Helper to calculate progress based on status
-func calculateProgress(status string) int {
-	switch status {
-	case "pending":
-		return 0
-	case "running":
-		return 50
-	case "completed":
-		return 100
-	case "failed":
-		return 100
-	default:
-		return 0
+// Submit a batch test (up to 10 URLs)
+func (s *Server) handleBatchTestSubmit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req BatchTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate request
+	if len(req.URLs) == 0 {
+		http.Error(w, "At least one URL is required", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.URLs) > 10 {
+		http.Error(w, "Maximum 10 URLs allowed per batch", http.StatusBadRequest)
+		return
+	}
+
+	// Validate each URL
+	for _, url := range req.URLs {
+		if url == "" {
+			http.Error(w, "All URLs must be non-empty", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Set defaults
+	if req.MaxDuration == 0 {
+		req.MaxDuration = 60
+	}
+
+	// Create batch ID
+	batchID := uuid.New().String()
+	testIDs := make([]string, 0, len(req.URLs))
+
+	// Create individual test jobs for each URL
+	for _, url := range req.URLs {
+		testID := uuid.New().String()
+		ctx, cancel := context.WithCancel(context.Background())
+
+		job := &TestJob{
+			ID: testID,
+			Request: TestRequest{
+				URL:         url,
+				MaxDuration: req.MaxDuration,
+				Headless:    req.Headless,
+			},
+			Status:    "pending",
+			Progress:  0,
+			Message:   "Test queued in batch",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			ctx:       ctx,
+			cancel:    cancel,
+		}
+
+		s.mu.Lock()
+		s.jobs[testID] = job
+		s.mu.Unlock()
+
+		testIDs = append(testIDs, testID)
+
+		// Start test execution in background
+		go s.executeTest(job)
+	}
+
+	// Create batch job
+	batchJob := &BatchJob{
+		ID:        batchID,
+		TestIDs:   testIDs,
+		Status:    "running",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	s.mu.Lock()
+	s.batchJobs[batchID] = batchJob
+	s.mu.Unlock()
+
+	// Start batch status monitor
+	go s.monitorBatchStatus(batchID)
+
+	// Return batch ID and test IDs
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(BatchTestResponse{
+		BatchID: batchID,
+		TestIDs: testIDs,
+		Status:  "running",
+	})
+}
+
+// Get batch test status
+func (s *Server) handleBatchTestStatus(w http.ResponseWriter, r *http.Request) {
+	batchID := r.URL.Path[len("/api/batch-tests/"):]
+	if batchID == "" {
+		http.Error(w, "Batch ID required", http.StatusBadRequest)
+		return
+	}
+
+	s.mu.RLock()
+	batchJob, exists := s.batchJobs[batchID]
+	if !exists {
+		s.mu.RUnlock()
+		http.Error(w, "Batch not found", http.StatusNotFound)
+		return
+	}
+
+	// Collect status of all tests in the batch and calculate statistics
+	tests := make([]TestStatus, 0, len(batchJob.TestIDs))
+	completedCount := 0
+	failedCount := 0
+	runningCount := 0
+
+	for _, testID := range batchJob.TestIDs {
+		if job, ok := s.jobs[testID]; ok {
+			tests = append(tests, TestStatus{
+				TestID:    job.ID,
+				Status:    job.Status,
+				Progress:  job.Progress,
+				Message:   job.Message,
+				CreatedAt: job.CreatedAt,
+				UpdatedAt: job.UpdatedAt,
+			})
+
+			// Count by status
+			switch job.Status {
+			case "completed":
+				completedCount++
+			case "failed":
+				failedCount++
+			case "running":
+				runningCount++
+			}
+		}
+	}
+	s.mu.RUnlock()
+
+	status := BatchTestStatus{
+		BatchID:        batchJob.ID,
+		Status:         batchJob.Status,
+		Tests:          tests,
+		TotalTests:     len(batchJob.TestIDs),
+		CompletedTests: completedCount,
+		FailedTests:    failedCount,
+		RunningTests:   runningCount,
+		CreatedAt:      batchJob.CreatedAt,
+		UpdatedAt:      batchJob.UpdatedAt,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
+// Monitor batch status and update when all tests complete
+func (s *Server) monitorBatchStatus(batchID string) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
+
+		// Use read lock to check status (doesn't block other operations)
+		s.mu.RLock()
+		batchJob, exists := s.batchJobs[batchID]
+		if !exists {
+			s.mu.RUnlock()
+			return
+		}
+
+		// Check if all tests are complete
+		allComplete := true
+		anyFailed := false
+		failedCount := 0
+		completedCount := 0
+
+		for _, testID := range batchJob.TestIDs {
+			if job, ok := s.jobs[testID]; ok {
+				if job.Status != "completed" && job.Status != "failed" {
+					allComplete = false
+				}
+				if job.Status == "failed" {
+					anyFailed = true
+					failedCount++
+				}
+				if job.Status == "completed" {
+					completedCount++
+				}
+			}
+		}
+		s.mu.RUnlock()
+
+		// Only take write lock if we need to update
+		if allComplete {
+			s.mu.Lock()
+			// Double-check batch still exists
+			if batchJob, ok := s.batchJobs[batchID]; ok {
+				if anyFailed {
+					batchJob.Status = "completed_with_failures"
+				} else {
+					batchJob.Status = "completed"
+				}
+				batchJob.UpdatedAt = time.Now()
+
+				// Schedule cleanup after 1 hour
+				go func(id string) {
+					time.Sleep(1 * time.Hour)
+					s.mu.Lock()
+					delete(s.batchJobs, id)
+					s.mu.Unlock()
+					log.Printf("Cleaned up completed batch: %s", id)
+				}(batchID)
+			}
+			s.mu.Unlock()
+			return
+		}
+
+		// Update timestamp with write lock (brief)
+		s.mu.Lock()
+		if batchJob, ok := s.batchJobs[batchID]; ok {
+			batchJob.UpdatedAt = time.Now()
+		}
+		s.mu.Unlock()
 	}
 }
 
 // Execute a test job
 func (s *Server) executeTest(job *TestJob) {
+	// Acquire semaphore slot (blocks if at max concurrency)
+	s.testSemaphore <- struct{}{}
 	defer func() {
+		<-s.testSemaphore // Release slot when done
 		if r := recover(); r != nil {
 			s.updateJob(job.ID, "failed", 100, fmt.Sprintf("Panic: %v", r))
 		}
 	}()
 
-	log.Printf("Starting test %s for URL: %s", job.ID, job.Request.URL)
+	log.Printf("Starting test %s for URL: %s (concurrent: %d/%d)",
+		job.ID, job.Request.URL, len(s.testSemaphore), s.maxConcurrent)
 
 	// Update status to running
 	s.updateJob(job.ID, "running", 10, "Initializing browser...")
@@ -683,12 +879,6 @@ func (s *Server) executeTest(job *TestJob) {
 	}
 	s.mu.Unlock()
 
-	// Persist completion to database
-	duration := int(time.Since(job.CreatedAt).Seconds())
-	if err := s.db.CompleteTest(job.ID, "completed", score.OverallScore, duration, report.ReportID, report); err != nil {
-		log.Printf("Warning: Failed to update test in database: %v", err)
-	}
-
 	log.Printf("Test %s completed with score: %d/100", job.ID, score.OverallScore)
 }
 
@@ -713,26 +903,7 @@ func main() {
 
 	apiKey := os.Getenv("OPENAI_API_KEY")
 
-	// Initialize database
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "./data/dreamup.db"
-	}
-
-	// Ensure data directory exists
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
-		log.Fatalf("Failed to create data directory: %v", err)
-	}
-
-	database, err := db.New(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer database.Close()
-
-	log.Printf("📁 Database initialized at: %s", dbPath)
-
-	server := NewServer(port, apiKey, database)
+	server := NewServer(port, apiKey)
 
 	// Setup routes
 	mux := http.NewServeMux()
@@ -754,6 +925,8 @@ func main() {
 	mux.HandleFunc("/api/reports/", server.corsMiddleware(server.handleTestReport))
 	mux.HandleFunc("/api/screenshots/", server.corsMiddleware(server.handleScreenshot))
 	mux.HandleFunc("/api/videos/", server.corsMiddleware(server.handleVideo))
+	mux.HandleFunc("/api/batch-tests", server.corsMiddleware(server.handleBatchTestSubmit))
+	mux.HandleFunc("/api/batch-tests/", server.corsMiddleware(server.handleBatchTestStatus))
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -770,10 +943,12 @@ func main() {
 		log.Printf("🌐 Listening on http://localhost:%s", port)
 		log.Printf("📊 Health check: http://localhost:%s/health", port)
 		log.Printf("📝 API endpoints:")
-		log.Printf("   POST   /api/tests        - Submit new test")
-		log.Printf("   GET    /api/tests/{id}   - Get test status")
-		log.Printf("   GET    /api/tests/list   - List all tests")
-		log.Printf("   GET    /api/reports/{id} - Get test report")
+		log.Printf("   POST   /api/tests            - Submit new test")
+		log.Printf("   GET    /api/tests/{id}       - Get test status")
+		log.Printf("   GET    /api/tests/list       - List all tests")
+		log.Printf("   GET    /api/reports/{id}     - Get test report")
+		log.Printf("   POST   /api/batch-tests      - Submit batch test (up to 10 URLs)")
+		log.Printf("   GET    /api/batch-tests/{id} - Get batch test status")
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)

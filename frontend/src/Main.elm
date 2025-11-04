@@ -8,6 +8,7 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Random
 import Time
 import Url
 import Url.Parser as Parser exposing ((</>), Parser, string)
@@ -47,6 +48,8 @@ type alias Model =
     , testHistory : TestHistoryState
     , networkStatus : NetworkStatus
     , retryState : RetryState
+    , batchTestForm : BatchTestForm
+    , batchTestStatus : Maybe BatchTestStatus
     }
 
 
@@ -164,6 +167,30 @@ type alias TestForm =
     }
 
 
+type alias BatchTestForm =
+    { urls : List String
+    , urlInput : String
+    , maxDuration : Int
+    , headless : Bool
+    , validationError : Maybe String
+    , submitting : Bool
+    , submitError : Maybe String
+    }
+
+
+type alias BatchTestStatus =
+    { batchId : String
+    , status : String
+    , tests : List TestStatus
+    , totalTests : Int
+    , completedTests : Int
+    , failedTests : Int
+    , runningTests : Int
+    , createdAt : String
+    , updatedAt : String
+    }
+
+
 type alias TestStatus =
     { testId : String
     , status : String
@@ -243,7 +270,9 @@ type alias Summary =
 type Route
     = Home
     | TestSubmission
+    | BatchTestSubmission
     | TestStatusPage String
+    | BatchTestStatusPage String
     | ReportView String
     | TestHistory
     | NotFound
@@ -258,10 +287,10 @@ init flags url key =
         cmd =
             case route of
                 ReportView reportId ->
-                    fetchReport "/api" reportId
+                    fetchReport ("http://localhost:8080/api") reportId
 
                 TestHistory ->
-                    fetchTestHistory "/api" initTestHistory
+                    fetchTestHistory ("http://localhost:8080/api") initTestHistory
 
                 _ ->
                     Cmd.none
@@ -281,9 +310,58 @@ init flags url key =
       , testHistory = initTestHistory
       , networkStatus = initNetworkStatus
       , retryState = initRetryState
+      , batchTestForm = initBatchTestForm
+      , batchTestStatus = Nothing
       }
     , cmd
     )
+
+
+-- GAME LIBRARY
+
+
+type alias ExampleGame =
+    { title : String
+    , description : String
+    , url : String
+    , score : String
+    , badgeType : String
+    }
+
+
+gameLibrary : List ExampleGame
+gameLibrary =
+    [ { title = "Pac-Man"
+      , description = "Classic arcade game - eat dots and avoid ghosts"
+      , url = "https://freepacman.org"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    , { title = "2048"
+      , description = "Number puzzle game - combine tiles to reach 2048"
+      , url = "https://play2048.co"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    , { title = "Free Rider 2"
+      , description = "Kongregate - Physics-based bike game"
+      , url = "https://www.kongregate.com/en/games/onemorelevel/free-rider-2"
+      , score = "65/100"
+      , badgeType = "success"
+      }
+    , { title = "Subway Surfers"
+      , description = "Poki - Endless runner game"
+      , url = "https://www.poki.com/en/g/subway-surfers"
+      , score = "40/100"
+      , badgeType = "warning"
+      }
+    , { title = "Agar.io"
+      , description = "Simple multiplayer game"
+      , url = "https://agar.io"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    ]
 
 
 initExpandedSections : ExpandedSections
@@ -368,6 +446,18 @@ initTestForm =
     }
 
 
+initBatchTestForm : BatchTestForm
+initBatchTestForm =
+    { urls = []
+    , urlInput = ""
+    , maxDuration = 60
+    , headless = True  -- Batch tests are always headless
+    , validationError = Nothing
+    , submitting = False
+    , submitError = Nothing
+    }
+
+
 -- URL PARSING
 
 
@@ -376,7 +466,9 @@ routeParser =
     Parser.oneOf
         [ Parser.map Home Parser.top
         , Parser.map TestSubmission (Parser.s "submit")
+        , Parser.map BatchTestSubmission (Parser.s "batch")
         , Parser.map TestStatusPage (Parser.s "test" </> string)
+        , Parser.map BatchTestStatusPage (Parser.s "batch" </> string)
         , Parser.map ReportView (Parser.s "report" </> string)
         , Parser.map TestHistory (Parser.s "history")
         ]
@@ -433,6 +525,18 @@ type Msg
     | NetworkStatusChanged Bool
     | RetryRequest
     | DismissError
+    | UpdateBatchUrlInput String
+    | AddBatchUrl
+    | AddQuickGameToBatch String
+    | FillRandomBatchUrls
+    | RandomUrlsGenerated (List Int)
+    | RemoveBatchUrl Int
+    | UpdateBatchMaxDuration String
+    | ToggleBatchHeadless
+    | SubmitBatchTest
+    | BatchTestSubmitted (Result Http.Error BatchTestSubmitResponse)
+    | PollBatchStatus String
+    | BatchStatusUpdated (Result Http.Error BatchTestStatus)
 
 
 type SectionType
@@ -465,9 +569,6 @@ update msg model =
                     case newRoute of
                         ReportView reportId ->
                             fetchReport model.apiBaseUrl reportId
-
-                        TestHistory ->
-                            fetchTestHistory model.apiBaseUrl initTestHistory
 
                         _ ->
                             Cmd.none
@@ -577,6 +678,9 @@ update msg model =
             case model.route of
                 TestStatusPage testId ->
                     ( model, pollTestStatus model.apiBaseUrl testId )
+
+                BatchTestStatusPage batchId ->
+                    ( model, pollBatchStatus model.apiBaseUrl batchId )
 
                 _ ->
                     ( model, Cmd.none )
@@ -974,6 +1078,242 @@ update msg model =
             , Cmd.none
             )
 
+        UpdateBatchUrlInput input ->
+            let
+                form =
+                    model.batchTestForm
+
+                updatedForm =
+                    { form | urlInput = input }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        AddBatchUrl ->
+            let
+                form =
+                    model.batchTestForm
+
+                trimmedUrl =
+                    String.trim form.urlInput
+            in
+            if String.isEmpty trimmedUrl then
+                ( model, Cmd.none )
+
+            else if List.length form.urls >= 10 then
+                let
+                    updatedForm =
+                        { form | validationError = Just "Maximum 10 URLs allowed" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else if List.member trimmedUrl form.urls then
+                let
+                    updatedForm =
+                        { form | validationError = Just "URL already added to batch" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else
+                case validateUrl trimmedUrl of
+                    Just error ->
+                        let
+                            updatedForm =
+                                { form | validationError = Just error }
+                        in
+                        ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+                    Nothing ->
+                        let
+                            updatedForm =
+                                { form
+                                    | urls = form.urls ++ [ trimmedUrl ]
+                                    , urlInput = ""
+                                    , validationError = Nothing
+                                }
+                        in
+                        ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        AddQuickGameToBatch url ->
+            let
+                form =
+                    model.batchTestForm
+            in
+            if List.length form.urls >= 10 then
+                let
+                    updatedForm =
+                        { form | validationError = Just "Maximum 10 URLs allowed" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else if List.member url form.urls then
+                let
+                    updatedForm =
+                        { form | validationError = Just "URL already added to batch" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else
+                let
+                    updatedForm =
+                        { form
+                            | urls = form.urls ++ [ url ]
+                            , validationError = Nothing
+                        }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        FillRandomBatchUrls ->
+            let
+                availableUrls =
+                    List.map .url gameLibrary
+
+                -- Generate command to select random URLs
+                randomIndicesGenerator =
+                    Random.list 10 (Random.int 0 (List.length availableUrls - 1))
+            in
+            ( model, Random.generate RandomUrlsGenerated randomIndicesGenerator )
+
+        RandomUrlsGenerated indices ->
+            let
+                form =
+                    model.batchTestForm
+
+                availableUrls =
+                    List.map .url gameLibrary
+
+                -- Convert indices to URLs
+                selectedUrls =
+                    indices
+                        |> List.filterMap (\i -> List.head (List.drop i availableUrls))
+                        |> List.take 10
+
+                updatedForm =
+                    { form
+                        | urls = selectedUrls
+                        , validationError = Nothing
+                    }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        RemoveBatchUrl index ->
+            let
+                form =
+                    model.batchTestForm
+
+                updatedUrls =
+                    List.take index form.urls ++ List.drop (index + 1) form.urls
+
+                updatedForm =
+                    { form | urls = updatedUrls, validationError = Nothing }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        UpdateBatchMaxDuration durationStr ->
+            let
+                form =
+                    model.batchTestForm
+
+                duration =
+                    String.toInt durationStr |> Maybe.withDefault 60
+
+                updatedForm =
+                    { form | maxDuration = duration }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        ToggleBatchHeadless ->
+            let
+                form =
+                    model.batchTestForm
+
+                updatedForm =
+                    { form | headless = not form.headless }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        SubmitBatchTest ->
+            let
+                form =
+                    model.batchTestForm
+            in
+            if List.isEmpty form.urls then
+                let
+                    updatedForm =
+                        { form | validationError = Just "Please add at least one URL" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else
+                let
+                    updatedForm =
+                        { form | submitting = True, submitError = Nothing }
+                in
+                ( { model | batchTestForm = updatedForm }
+                , submitBatchTestRequest model.apiBaseUrl form
+                )
+
+        BatchTestSubmitted (Ok response) ->
+            let
+                form =
+                    model.batchTestForm
+
+                updatedForm =
+                    { form | submitting = False }
+            in
+            ( { model | batchTestForm = updatedForm }
+            , Nav.pushUrl model.key ("/batch/" ++ response.batchId)
+            )
+
+        BatchTestSubmitted (Err error) ->
+            let
+                form =
+                    model.batchTestForm
+
+                errorMsg =
+                    case error of
+                        Http.BadUrl _ ->
+                            "Invalid URL"
+
+                        Http.Timeout ->
+                            "Request timed out"
+
+                        Http.NetworkError ->
+                            "Network error"
+
+                        Http.BadStatus status ->
+                            "Server error: " ++ String.fromInt status
+
+                        Http.BadBody errMsg ->
+                            "Response error: " ++ errMsg
+
+                updatedForm =
+                    { form | submitting = False, submitError = Just errorMsg }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        PollBatchStatus batchId ->
+            ( model, pollBatchStatus model.apiBaseUrl batchId )
+
+        BatchStatusUpdated (Ok status) ->
+            -- Stop polling if batch is complete
+            let
+                isComplete =
+                    status.status == "completed" || status.status == "completed_with_failures"
+            in
+            ( { model | batchTestStatus = Just status }, Cmd.none )
+
+        BatchStatusUpdated (Err error) ->
+            ( model, Cmd.none )
+
+
+-- DECODER HELPERS
+
+
+-- Helper for pipeline-style decoding (needed for decoders with > 8 fields)
+andMap : Decode.Decoder a -> Decode.Decoder (a -> b) -> Decode.Decoder b
+andMap =
+    Decode.map2 (|>)
+
 
 -- VALIDATION
 
@@ -1043,6 +1383,63 @@ testStatusDecoder =
         (Decode.field "message" Decode.string)
 
 
+-- BATCH TEST API
+
+
+type alias BatchTestSubmitResponse =
+    { batchId : String
+    , testIds : List String
+    , status : String
+    }
+
+
+submitBatchTestRequest : String -> BatchTestForm -> Cmd Msg
+submitBatchTestRequest apiBaseUrl form =
+    let
+        body =
+            Encode.object
+                [ ( "urls", Encode.list Encode.string form.urls )
+                , ( "maxDuration", Encode.int form.maxDuration )
+                , ( "headless", Encode.bool form.headless )
+                ]
+    in
+    postWithCors
+        (apiBaseUrl ++ "/batch-tests")
+        body
+        batchTestSubmitResponseDecoder
+        BatchTestSubmitted
+
+
+batchTestSubmitResponseDecoder : Decode.Decoder BatchTestSubmitResponse
+batchTestSubmitResponseDecoder =
+    Decode.map3 BatchTestSubmitResponse
+        (Decode.field "batchId" Decode.string)
+        (Decode.field "testIds" (Decode.list Decode.string))
+        (Decode.field "status" Decode.string)
+
+
+pollBatchStatus : String -> String -> Cmd Msg
+pollBatchStatus apiBaseUrl batchId =
+    getWithCors
+        (apiBaseUrl ++ "/batch-tests/" ++ batchId)
+        batchStatusDecoder
+        BatchStatusUpdated
+
+
+batchStatusDecoder : Decode.Decoder BatchTestStatus
+batchStatusDecoder =
+    Decode.succeed BatchTestStatus
+        |> andMap (Decode.field "batchId" Decode.string)
+        |> andMap (Decode.field "status" Decode.string)
+        |> andMap (Decode.field "tests" (Decode.list testStatusDecoder))
+        |> andMap (Decode.field "totalTests" Decode.int)
+        |> andMap (Decode.field "completedTests" Decode.int)
+        |> andMap (Decode.field "failedTests" Decode.int)
+        |> andMap (Decode.field "runningTests" Decode.int)
+        |> andMap (Decode.field "createdAt" Decode.string)
+        |> andMap (Decode.field "updatedAt" Decode.string)
+
+
 fetchReport : String -> String -> Cmd Msg
 fetchReport apiBaseUrl reportId =
     getWithCors
@@ -1054,28 +1451,16 @@ fetchReport apiBaseUrl reportId =
 fetchTestHistory : String -> TestHistoryState -> Cmd Msg
 fetchTestHistory apiBaseUrl history =
     let
-        statusFilter =
-            Maybe.withDefault "all" history.statusFilter
-
         queryParams =
-            [ "status=" ++ statusFilter ]
+            [ "page=" ++ String.fromInt history.currentPage
+            , "limit=" ++ String.fromInt history.itemsPerPage
+            ]
                 |> String.join "&"
     in
     getWithCors
-        (apiBaseUrl ++ "/tests/list?" ++ queryParams)
-        (Decode.list testHistoryItemDecoder)
+        (apiBaseUrl ++ "/reports?" ++ queryParams)
+        (Decode.list reportSummaryDecoder)
         TestHistoryFetched
-
-
-testHistoryItemDecoder : Decode.Decoder ReportSummary
-testHistoryItemDecoder =
-    Decode.map6 ReportSummary
-        (Decode.field "reportId" Decode.string |> Decode.maybe |> Decode.map (Maybe.withDefault ""))
-        (Decode.field "gameUrl" Decode.string)
-        (Decode.field "createdAt" Decode.string)
-        (Decode.field "status" Decode.string)
-        (Decode.field "score" Decode.int |> Decode.maybe)
-        (Decode.field "duration" Decode.int)
 
 
 reportSummaryDecoder : Decode.Decoder ReportSummary
@@ -1248,6 +1633,18 @@ subscriptions model =
         TestStatusPage _ ->
             Time.every 3000 Tick
 
+        BatchTestStatusPage _ ->
+            -- Only poll if batch is still running
+            case model.batchTestStatus of
+                Just status ->
+                    if status.status == "completed" || status.status == "completed_with_failures" then
+                        Sub.none
+                    else
+                        Time.every 3000 Tick
+
+                Nothing ->
+                    Time.every 3000 Tick
+
         _ ->
             Sub.none
 
@@ -1311,8 +1708,14 @@ viewContent model =
             TestSubmission ->
                 viewTestSubmission model
 
+            BatchTestSubmission ->
+                viewBatchTestSubmission model
+
             TestStatusPage testId ->
                 viewTestStatus model testId
+
+            BatchTestStatusPage batchId ->
+                viewBatchTestStatus model batchId
 
             ReportView reportId ->
                 viewReportView model reportId
@@ -1333,6 +1736,7 @@ viewHome =
             , p [ class "text-lg text-gray-600 mb-6" ] [ text "An automated QA testing system for web games. Test game functionality, performance, and compatibility with AI-powered analysis." ]
             , div [ class "flex gap-4" ]
                 [ a [ href "/submit", class "inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200" ] [ text "Submit New Test" ]
+                , a [ href "/batch", class "inline-flex items-center px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200" ] [ text "Batch Test (up to 10 URLs)" ]
                 , a [ href "/history", class "inline-flex items-center px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg shadow-sm transition-colors duration-200" ] [ text "View Test History" ]
                 ]
             ]
@@ -1442,52 +1846,317 @@ viewTestSubmission model =
         , div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
             [ h3 [ class "text-xl font-bold text-gray-900 mb-2" ] [ text "Example Games (Click to Test)" ]
             , p [ class "text-sm text-gray-600 mb-6" ] [ text "These games have been tested and work well with our system:" ]
-            , div [ class "grid grid-cols-1 md:grid-cols-2 gap-4" ]
-                [ viewExampleGame
-                    "Pac-Man"
-                    "Classic arcade game"
-                    "https://funhtml5games.com/pacman/index.html"
-                    "85/100"
-                    "success"
-                , viewExampleGame
-                    "2048"
-                    "Number puzzle game"
-                    "https://funhtml5games.com/2048/index.html"
-                    "90/100"
-                    "success"
-                ]
+            , div [ class "grid grid-cols-1 md:grid-cols-3 gap-4" ]
+                (List.map viewExampleGame gameLibrary)
             ]
         ]
 
 
-viewExampleGame : String -> String -> String -> String -> String -> Html Msg
-viewExampleGame title description url score badgeType =
+viewExampleGame : ExampleGame -> Html Msg
+viewExampleGame game =
     let
         badgeColor =
-            case badgeType of
+            case game.badgeType of
                 "success" -> "bg-green-100 text-green-800 border-green-200"
                 "warning" -> "bg-yellow-100 text-yellow-800 border-yellow-200"
                 _ -> "bg-blue-100 text-blue-800 border-blue-200"
     in
     div
         [ class "border border-gray-200 rounded-lg hover:shadow-lg transition-shadow cursor-pointer bg-white overflow-hidden"
-        , onClick (UpdateGameUrl url)
+        , onClick (UpdateGameUrl game.url)
         ]
         [ div [ class "p-4 space-y-3" ]
             [ div [ class "flex items-start justify-between" ]
-                [ h4 [ class "font-semibold text-gray-900 text-lg" ] [ text title ]
-                , span [ class ("px-2 py-1 text-xs font-medium rounded border " ++ badgeColor) ] [ text score ]
+                [ h4 [ class "font-semibold text-gray-900 text-lg" ] [ text game.title ]
+                , span [ class ("px-2 py-1 text-xs font-medium rounded border " ++ badgeColor) ] [ text game.score ]
                 ]
-            , p [ class "text-sm text-gray-600" ] [ text description ]
-            , code [ class "block text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200 truncate" ] [ text url ]
+            , p [ class "text-sm text-gray-600" ] [ text game.description ]
+            , code [ class "block text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200 truncate" ] [ text game.url ]
             , button
                 [ class "w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
                 , type_ "button"
-                , onClick (UpdateGameUrl url)
+                , onClick (UpdateGameUrl game.url)
                 ]
                 [ text "Use This URL" ]
             ]
         ]
+
+
+viewBatchTestSubmission : Model -> Html Msg
+viewBatchTestSubmission model =
+    let
+        form =
+            model.batchTestForm
+    in
+    div [ class "space-y-8" ]
+        [ div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
+            [ h2 [ class "text-2xl font-bold text-gray-900 mb-2" ] [ text "Batch Test Submission" ]
+            , p [ class "text-gray-600 mb-6" ] [ text "Test up to 10 game URLs concurrently. Add URLs one at a time below." ]
+            , div [ class "space-y-6" ]
+                [ -- URL input section
+                  div [ class "space-y-2" ]
+                    [ label [ for "url-input", class "block text-sm font-medium text-gray-700" ]
+                        [ text ("Add URL (" ++ String.fromInt (List.length form.urls) ++ "/10)") ]
+                    , div [ class "flex gap-2" ]
+                        [ input
+                            [ type_ "text"
+                            , id "url-input"
+                            , placeholder "https://example.com/game"
+                            , value form.urlInput
+                            , onInput UpdateBatchUrlInput
+                            , disabled form.submitting
+                            , class "flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                            ]
+                            []
+                        , button
+                            [ onClick AddBatchUrl
+                            , disabled (form.submitting || String.isEmpty (String.trim form.urlInput) || List.length form.urls >= 10)
+                            , class "px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-sm transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            ]
+                            [ text "Add" ]
+                        ]
+                    , case form.validationError of
+                        Just error ->
+                            div [ class "text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2" ] [ text error ]
+
+                        Nothing ->
+                            text ""
+                    ]
+
+                -- Quick-add games section
+                , div [ class "space-y-3" ]
+                    [ div [ class "flex items-center justify-between" ]
+                        [ label [ class "block text-sm font-medium text-gray-700" ] [ text "Quick Add Games:" ]
+                        , button
+                            [ onClick FillRandomBatchUrls
+                            , disabled form.submitting
+                            , class "px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            ]
+                            [ text "🎲 Fill Random (10)" ]
+                        ]
+                    , div [ class "grid grid-cols-2 md:grid-cols-5 gap-2" ]
+                        (List.map
+                            (\game ->
+                                button
+                                    [ onClick (AddQuickGameToBatch game.url)
+                                    , disabled (form.submitting || List.length form.urls >= 10)
+                                    , class "px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded-md transition-colors border border-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    , title game.url
+                                    ]
+                                    [ text ("+ " ++ game.title) ]
+                            )
+                            gameLibrary
+                        )
+                    ]
+
+                -- URL list
+                , if List.isEmpty form.urls then
+                    div [ class "text-sm text-gray-500 italic p-4 bg-gray-50 rounded-lg border border-gray-200" ]
+                        [ text "No URLs added yet. Add at least one URL to start batch testing." ]
+                  else
+                    div [ class "space-y-2" ]
+                        [ label [ class "block text-sm font-medium text-gray-700" ] [ text "URLs to Test:" ]
+                        , div [ class "space-y-2" ]
+                            (List.indexedMap
+                                (\index url ->
+                                    div [ class "flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200" ]
+                                        [ span [ class "flex-1 text-sm text-gray-700 font-mono truncate" ] [ text url ]
+                                        , button
+                                            [ onClick (RemoveBatchUrl index)
+                                            , disabled form.submitting
+                                            , class "px-3 py-1 text-sm bg-red-100 hover:bg-red-200 text-red-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                            ]
+                                            [ text "Remove" ]
+                                        ]
+                                )
+                                form.urls
+                            )
+                        ]
+
+                -- Settings
+                , div [ class "space-y-2" ]
+                    [ label [ for "batch-max-duration", class "block text-sm font-medium text-gray-700" ]
+                        [ text ("Max Duration per Test: " ++ String.fromInt form.maxDuration ++ "s") ]
+                    , input
+                        [ type_ "range"
+                        , id "batch-max-duration"
+                        , Html.Attributes.min "60"
+                        , Html.Attributes.max "300"
+                        , value (String.fromInt form.maxDuration)
+                        , onInput UpdateBatchMaxDuration
+                        , disabled form.submitting
+                        , class "w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600 disabled:cursor-not-allowed"
+                        ]
+                        []
+                    , p [ class "text-sm text-gray-500" ] [ text "Maximum time allowed per test (60-300 seconds)" ]
+                    ]
+
+                -- Note: Batch tests always run in headless mode for better performance
+
+                , case form.submitError of
+                    Just error ->
+                        div [ class "text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-3" ] [ text error ]
+
+                    Nothing ->
+                        text ""
+
+                , div [ class "flex gap-3 pt-4" ]
+                    [ button
+                        [ onClick SubmitBatchTest
+                        , class "px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg shadow-sm transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        , disabled (form.submitting || List.isEmpty form.urls)
+                        ]
+                        [ text
+                            (if form.submitting then
+                                "Submitting..."
+                             else
+                                "Start Batch Test"
+                            )
+                        ]
+                    , a [ href "/", class "px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg shadow-sm transition-colors" ] [ text "Cancel" ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewBatchTestStatus : Model -> String -> Html Msg
+viewBatchTestStatus model batchId =
+    div [ class "max-w-6xl mx-auto space-y-6" ]
+        [ div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
+            [ h2 [ class "text-2xl font-bold text-gray-900 mb-2" ] [ text "Batch Test Status" ]
+            , p [ class "text-sm text-gray-600 mb-4" ] [ text ("Batch ID: " ++ batchId) ]
+            , case model.batchTestStatus of
+                Nothing ->
+                    div [ class "flex items-center justify-center py-12" ]
+                        [ div [ class "animate-spin rounded-full h-12 w-12 border-b-2 border-green-600" ] []
+                        , p [ class "ml-4 text-gray-600" ] [ text "Loading batch status..." ]
+                        ]
+
+                Just status ->
+                    div [ class "space-y-6" ]
+                        [ -- Overall batch status with statistics
+                          div [ class ("p-4 rounded-lg border-2 " ++ batchStatusColor status.status) ]
+                            [ div [ class "flex items-center justify-between" ]
+                                [ div []
+                                    [ p [ class "text-sm font-medium text-gray-700" ] [ text "Batch Status" ]
+                                    , p [ class "text-2xl font-bold" ] [ text (batchStatusText status.status) ]
+                                    ]
+                                , div [ class "text-right space-y-1" ]
+                                    [ p [ class "text-sm text-gray-600" ] [ text ("Total: " ++ String.fromInt status.totalTests) ]
+                                    , p [ class "text-sm text-green-600 font-medium" ] [ text ("✓ Completed: " ++ String.fromInt status.completedTests) ]
+                                    , if status.failedTests > 0 then
+                                        p [ class "text-sm text-red-600 font-medium" ] [ text ("✗ Failed: " ++ String.fromInt status.failedTests) ]
+                                      else
+                                        text ""
+                                    , if status.runningTests > 0 then
+                                        p [ class "text-sm text-blue-600 font-medium" ] [ text ("⟳ Running: " ++ String.fromInt status.runningTests) ]
+                                      else
+                                        text ""
+                                    ]
+                                ]
+                            ]
+
+                        -- Individual test statuses
+                        , div [ class "space-y-4" ]
+                            [ h3 [ class "text-lg font-semibold text-gray-900" ] [ text "Individual Test Results" ]
+                            , div [ class "grid gap-4" ]
+                                (List.map viewBatchTestItem status.tests)
+                            ]
+                        ]
+            ]
+        ]
+
+
+viewBatchTestItem : TestStatus -> Html Msg
+viewBatchTestItem test =
+    let
+        statusColor =
+            case test.status of
+                "completed" ->
+                    "border-green-500 bg-green-50"
+
+                "failed" ->
+                    "border-red-500 bg-red-50"
+
+                "running" ->
+                    "border-blue-500 bg-blue-50"
+
+                _ ->
+                    "border-gray-300 bg-gray-50"
+    in
+    div [ class ("p-4 rounded-lg border-2 " ++ statusColor) ]
+        [ div [ class "flex items-center justify-between mb-2" ]
+            [ div [ class "flex-1" ]
+                [ p [ class "text-sm font-medium text-gray-700" ] [ text "Test ID" ]
+                , p [ class "text-xs text-gray-600 font-mono" ] [ text test.testId ]
+                ]
+            , div [ class "flex gap-2" ]
+                [ if test.status == "completed" then
+                    a
+                        [ href ("/report/" ++ test.testId)
+                        , class "px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
+                        ]
+                        [ text "View Report" ]
+                  else
+                    text ""
+                ]
+            ]
+        , div [ class "mt-2" ]
+            [ p [ class "text-sm text-gray-700" ] [ text test.message ]
+            , if test.status == "running" then
+                div [ class "mt-2" ]
+                    [ div [ class "w-full bg-gray-200 rounded-full h-2" ]
+                        [ div
+                            [ class "bg-blue-600 h-2 rounded-full transition-all duration-300"
+                            , style "width" (String.fromInt test.progress ++ "%")
+                            ]
+                            []
+                        ]
+                    , p [ class "text-xs text-gray-600 mt-1" ] [ text (String.fromInt test.progress ++ "% complete") ]
+                    ]
+              else
+                text ""
+            ]
+        ]
+
+
+batchStatusColor : String -> String
+batchStatusColor status =
+    case status of
+        "completed" ->
+            "border-green-500 bg-green-50"
+
+        "completed_with_failures" ->
+            "border-yellow-500 bg-yellow-50"
+
+        "running" ->
+            "border-blue-500 bg-blue-50"
+
+        _ ->
+            "border-gray-300 bg-gray-50"
+
+
+batchStatusText : String -> String
+batchStatusText status =
+    case status of
+        "completed" ->
+            "✓ All Tests Completed"
+
+        "completed_with_failures" ->
+            "⚠ Completed with Failures"
+
+        "running" ->
+            "⟳ Tests Running..."
+
+        _ ->
+            status
+
+
+countCompletedTests : List TestStatus -> Int
+countCompletedTests tests =
+    List.filter (\t -> t.status == "completed" || t.status == "failed") tests
+        |> List.length
 
 
 viewTestStatus : Model -> String -> Html Msg
@@ -2075,13 +2744,23 @@ viewVirtualScrollControls offset total limit =
         ]
 
 
-{-| Legacy console log view (simple) -}
+{-| Legacy console log view (simple) with Tailwind styling -}
 viewConsoleLog : ConsoleLog -> Html Msg
 viewConsoleLog log =
-    div [ class ("console-log log-" ++ log.level) ]
-        [ span [ class "log-level" ] [ text (String.toUpper log.level) ]
-        , span [ class "log-message" ] [ text log.message ]
-        , span [ class "log-source" ] [ text log.source ]
+    let
+        levelColor =
+            case log.level of
+                "error" -> "text-red-600 bg-red-50 border-red-200"
+                "warning" -> "text-yellow-700 bg-yellow-50 border-yellow-200"
+                "info" -> "text-blue-600 bg-blue-50 border-blue-200"
+                _ -> "text-gray-600 bg-gray-50 border-gray-200"
+    in
+    div [ class ("flex items-start gap-3 p-3 rounded border mb-2 " ++ levelColor) ]
+        [ span [ class "font-bold text-xs uppercase flex-shrink-0" ] [ text log.level ]
+        , div [ class "flex-1 space-y-1" ]
+            [ div [ class "text-sm font-mono break-words" ] [ text log.message ]
+            , div [ class "text-xs opacity-60" ] [ text log.source ]
+            ]
         ]
 
 
@@ -2144,21 +2823,21 @@ truncateMessage message maxLength =
 {-| Subtask 4: Report Actions -}
 viewReportActions : Report -> Html Msg
 viewReportActions report =
-    div [ class "bg-white rounded-lg shadow-md p-6 border border-gray-200" ]
-        [ h3 [ class "text-xl font-bold text-gray-900 mb-4" ] [ text "Actions" ]
-        , div [ class "flex flex-wrap gap-3" ]
+    div [ class "report-actions" ]
+        [ h3 [] [ text "Actions" ]
+        , div [ class "action-buttons" ]
             [ button
-                [ class "inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors duration-200"
+                [ class "action-btn primary"
                 , onClick (CopyReportLink report.reportId)
                 ]
                 [ text "📋 Copy Share Link" ]
             , button
-                [ class "inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md transition-colors duration-200"
+                [ class "action-btn secondary"
                 , onClick (DownloadReportJson report)
                 ]
                 [ text "💾 Download JSON" ]
             , button
-                [ class "inline-flex items-center px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-md transition-colors duration-200"
+                [ class "action-btn secondary"
                 , onClick (RerunTest report.gameUrl)
                 ]
                 [ text "🔄 Re-run Test" ]
@@ -2700,13 +3379,16 @@ statusBadgeClass status =
 
 
 formatDuration : Int -> String
-formatDuration durationSeconds =
+formatDuration durationMs =
     let
+        seconds =
+            durationMs // 1000
+
         mins =
-            durationSeconds // 60
+            seconds // 60
 
         secs =
-            remainderBy 60 durationSeconds
+            remainderBy 60 seconds
     in
     if mins > 0 then
         String.fromInt mins ++ "m " ++ String.fromInt secs ++ "s"
@@ -2916,8 +3598,10 @@ viewHistoryRow report =
             ]
         , td [ class "px-6 py-4 whitespace-nowrap text-sm text-gray-900" ] [ text (formatDuration report.duration) ]
         , td [ class "px-6 py-4 whitespace-nowrap text-sm font-medium" ]
-            [ span
-                [ class "text-blue-600 hover:text-blue-900 transition-colors duration-150" ]
+            [ button
+                [ class "text-blue-600 hover:text-blue-900 transition-colors duration-150"
+                , onClick (NavigateToReport report.reportId)
+                ]
                 [ text "View Report" ]
             ]
         ]
