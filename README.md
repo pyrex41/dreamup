@@ -6,6 +6,8 @@
 [![Go Version](https://img.shields.io/badge/go-1.24+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
+🚀 **Live Demo**: [dreamup.fly.dev](https://dreamup.fly.dev)
+
 📚 **Documentation**: [Architecture Guide](ARCHITECTURE.md) | [Deployment Guide](DEPLOYMENT.md)
 
 ## Overview
