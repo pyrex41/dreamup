@@ -38,6 +38,12 @@ reports/
 !frontend/package-lock.json
 !frontend/elm.json
 
+# Database
+data/
+*.db
+*.sqlite
+*.sqlite3
+
 # Screenshots and test artifacts
 screenshots/
 *.png
