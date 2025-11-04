@@ -181,6 +181,10 @@ type alias BatchTestStatus =
     { batchId : String
     , status : String
     , tests : List TestStatus
+    , totalTests : Int
+    , completedTests : Int
+    , failedTests : Int
+    , runningTests : Int
     , createdAt : String
     , updatedAt : String
     }
@@ -1051,6 +1055,13 @@ update msg model =
                 in
                 ( { model | batchTestForm = updatedForm }, Cmd.none )
 
+            else if List.member trimmedUrl form.urls then
+                let
+                    updatedForm =
+                        { form | validationError = Just "URL already added to batch" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
             else
                 case validateUrl trimmedUrl of
                     Just error ->
@@ -1159,8 +1170,8 @@ update msg model =
                         Http.BadStatus status ->
                             "Server error: " ++ String.fromInt status
 
-                        Http.BadBody msg ->
-                            "Response error: " ++ msg
+                        Http.BadBody errMsg ->
+                            "Response error: " ++ errMsg
 
                 updatedForm =
                     { form | submitting = False, submitError = Just errorMsg }
@@ -1171,10 +1182,24 @@ update msg model =
             ( model, pollBatchStatus model.apiBaseUrl batchId )
 
         BatchStatusUpdated (Ok status) ->
+            -- Stop polling if batch is complete
+            let
+                isComplete =
+                    status.status == "completed" || status.status == "completed_with_failures"
+            in
             ( { model | batchTestStatus = Just status }, Cmd.none )
 
         BatchStatusUpdated (Err error) ->
             ( model, Cmd.none )
+
+
+-- DECODER HELPERS
+
+
+-- Helper for pipeline-style decoding (needed for decoders with > 8 fields)
+andMap : Decode.Decoder a -> Decode.Decoder (a -> b) -> Decode.Decoder b
+andMap =
+    Decode.map2 (|>)
 
 
 -- VALIDATION
@@ -1290,12 +1315,16 @@ pollBatchStatus apiBaseUrl batchId =
 
 batchStatusDecoder : Decode.Decoder BatchTestStatus
 batchStatusDecoder =
-    Decode.map5 BatchTestStatus
-        (Decode.field "batchId" Decode.string)
-        (Decode.field "status" Decode.string)
-        (Decode.field "tests" (Decode.list testStatusDecoder))
-        (Decode.field "createdAt" Decode.string)
-        (Decode.field "updatedAt" Decode.string)
+    Decode.succeed BatchTestStatus
+        |> andMap (Decode.field "batchId" Decode.string)
+        |> andMap (Decode.field "status" Decode.string)
+        |> andMap (Decode.field "tests" (Decode.list testStatusDecoder))
+        |> andMap (Decode.field "totalTests" Decode.int)
+        |> andMap (Decode.field "completedTests" Decode.int)
+        |> andMap (Decode.field "failedTests" Decode.int)
+        |> andMap (Decode.field "runningTests" Decode.int)
+        |> andMap (Decode.field "createdAt" Decode.string)
+        |> andMap (Decode.field "updatedAt" Decode.string)
 
 
 fetchReport : String -> String -> Cmd Msg
@@ -1492,7 +1521,16 @@ subscriptions model =
             Time.every 3000 Tick
 
         BatchTestStatusPage _ ->
-            Time.every 3000 Tick
+            -- Only poll if batch is still running
+            case model.batchTestStatus of
+                Just status ->
+                    if status.status == "completed" || status.status == "completed_with_failures" then
+                        Sub.none
+                    else
+                        Time.every 3000 Tick
+
+                Nothing ->
+                    Time.every 3000 Tick
 
         _ ->
             Sub.none
@@ -1888,17 +1926,24 @@ viewBatchTestStatus model batchId =
 
                 Just status ->
                     div [ class "space-y-6" ]
-                        [ -- Overall batch status
-                          div [ class "p-4 rounded-lg border-2 " ++ (batchStatusColor status.status) ]
+                        [ -- Overall batch status with statistics
+                          div [ class ("p-4 rounded-lg border-2 " ++ batchStatusColor status.status) ]
                             [ div [ class "flex items-center justify-between" ]
                                 [ div []
                                     [ p [ class "text-sm font-medium text-gray-700" ] [ text "Batch Status" ]
                                     , p [ class "text-2xl font-bold" ] [ text (batchStatusText status.status) ]
                                     ]
-                                , div [ class "text-right" ]
-                                    [ p [ class "text-sm text-gray-600" ] [ text ("Tests: " ++ String.fromInt (List.length status.tests)) ]
-                                    , p [ class "text-sm text-gray-600" ]
-                                        [ text ("Completed: " ++ String.fromInt (countCompletedTests status.tests) ++ "/" ++ String.fromInt (List.length status.tests)) ]
+                                , div [ class "text-right space-y-1" ]
+                                    [ p [ class "text-sm text-gray-600" ] [ text ("Total: " ++ String.fromInt status.totalTests) ]
+                                    , p [ class "text-sm text-green-600 font-medium" ] [ text ("✓ Completed: " ++ String.fromInt status.completedTests) ]
+                                    , if status.failedTests > 0 then
+                                        p [ class "text-sm text-red-600 font-medium" ] [ text ("✗ Failed: " ++ String.fromInt status.failedTests) ]
+                                      else
+                                        text ""
+                                    , if status.runningTests > 0 then
+                                        p [ class "text-sm text-blue-600 font-medium" ] [ text ("⟳ Running: " ++ String.fromInt status.runningTests) ]
+                                      else
+                                        text ""
                                     ]
                                 ]
                             ]

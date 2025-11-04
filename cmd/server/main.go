@@ -53,11 +53,15 @@ type BatchTestResponse struct {
 
 // BatchTestStatus represents the status of a batch test
 type BatchTestStatus struct {
-	BatchID   string       `json:"batchId"`
-	Status    string       `json:"status"`
-	Tests     []TestStatus `json:"tests"`
-	CreatedAt time.Time    `json:"createdAt"`
-	UpdatedAt time.Time    `json:"updatedAt"`
+	BatchID        string       `json:"batchId"`
+	Status         string       `json:"status"`
+	Tests          []TestStatus `json:"tests"`
+	TotalTests     int          `json:"totalTests"`
+	CompletedTests int          `json:"completedTests"`
+	FailedTests    int          `json:"failedTests"`
+	RunningTests   int          `json:"runningTests"`
+	CreatedAt      time.Time    `json:"createdAt"`
+	UpdatedAt      time.Time    `json:"updatedAt"`
 }
 
 // BatchJob represents a batch of test jobs
@@ -96,19 +100,24 @@ type TestJob struct {
 
 // Server manages the API and test execution
 type Server struct {
-	jobs       map[string]*TestJob
-	batchJobs  map[string]*BatchJob
-	mu         sync.RWMutex
-	port       string
-	apiKey     string
+	jobs           map[string]*TestJob
+	batchJobs      map[string]*BatchJob
+	mu             sync.RWMutex
+	port           string
+	apiKey         string
+	testSemaphore  chan struct{} // Limits concurrent tests
+	maxConcurrent  int
 }
 
 func NewServer(port, apiKey string) *Server {
+	maxConcurrent := 20 // Maximum 20 concurrent tests
 	return &Server{
-		jobs:      make(map[string]*TestJob),
-		batchJobs: make(map[string]*BatchJob),
-		port:      port,
-		apiKey:    apiKey,
+		jobs:          make(map[string]*TestJob),
+		batchJobs:     make(map[string]*BatchJob),
+		port:          port,
+		apiKey:        apiKey,
+		testSemaphore: make(chan struct{}, maxConcurrent),
+		maxConcurrent: maxConcurrent,
 	}
 }
 
@@ -453,8 +462,12 @@ func (s *Server) handleBatchTestStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Collect status of all tests in the batch
+	// Collect status of all tests in the batch and calculate statistics
 	tests := make([]TestStatus, 0, len(batchJob.TestIDs))
+	completedCount := 0
+	failedCount := 0
+	runningCount := 0
+
 	for _, testID := range batchJob.TestIDs {
 		if job, ok := s.jobs[testID]; ok {
 			tests = append(tests, TestStatus{
@@ -465,16 +478,30 @@ func (s *Server) handleBatchTestStatus(w http.ResponseWriter, r *http.Request) {
 				CreatedAt: job.CreatedAt,
 				UpdatedAt: job.UpdatedAt,
 			})
+
+			// Count by status
+			switch job.Status {
+			case "completed":
+				completedCount++
+			case "failed":
+				failedCount++
+			case "running":
+				runningCount++
+			}
 		}
 	}
 	s.mu.RUnlock()
 
 	status := BatchTestStatus{
-		BatchID:   batchJob.ID,
-		Status:    batchJob.Status,
-		Tests:     tests,
-		CreatedAt: batchJob.CreatedAt,
-		UpdatedAt: batchJob.UpdatedAt,
+		BatchID:        batchJob.ID,
+		Status:         batchJob.Status,
+		Tests:          tests,
+		TotalTests:     len(batchJob.TestIDs),
+		CompletedTests: completedCount,
+		FailedTests:    failedCount,
+		RunningTests:   runningCount,
+		CreatedAt:      batchJob.CreatedAt,
+		UpdatedAt:      batchJob.UpdatedAt,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -489,16 +516,20 @@ func (s *Server) monitorBatchStatus(batchID string) {
 	for {
 		<-ticker.C
 
-		s.mu.Lock()
+		// Use read lock to check status (doesn't block other operations)
+		s.mu.RLock()
 		batchJob, exists := s.batchJobs[batchID]
 		if !exists {
-			s.mu.Unlock()
+			s.mu.RUnlock()
 			return
 		}
 
 		// Check if all tests are complete
 		allComplete := true
 		anyFailed := false
+		failedCount := 0
+		completedCount := 0
+
 		for _, testID := range batchJob.TestIDs {
 			if job, ok := s.jobs[testID]; ok {
 				if job.Status != "completed" && job.Status != "failed" {
@@ -506,35 +537,62 @@ func (s *Server) monitorBatchStatus(batchID string) {
 				}
 				if job.Status == "failed" {
 					anyFailed = true
+					failedCount++
+				}
+				if job.Status == "completed" {
+					completedCount++
 				}
 			}
 		}
+		s.mu.RUnlock()
 
+		// Only take write lock if we need to update
 		if allComplete {
-			if anyFailed {
-				batchJob.Status = "completed_with_failures"
-			} else {
-				batchJob.Status = "completed"
+			s.mu.Lock()
+			// Double-check batch still exists
+			if batchJob, ok := s.batchJobs[batchID]; ok {
+				if anyFailed {
+					batchJob.Status = "completed_with_failures"
+				} else {
+					batchJob.Status = "completed"
+				}
+				batchJob.UpdatedAt = time.Now()
+
+				// Schedule cleanup after 1 hour
+				go func(id string) {
+					time.Sleep(1 * time.Hour)
+					s.mu.Lock()
+					delete(s.batchJobs, id)
+					s.mu.Unlock()
+					log.Printf("Cleaned up completed batch: %s", id)
+				}(batchID)
 			}
-			batchJob.UpdatedAt = time.Now()
 			s.mu.Unlock()
 			return
 		}
 
-		batchJob.UpdatedAt = time.Now()
+		// Update timestamp with write lock (brief)
+		s.mu.Lock()
+		if batchJob, ok := s.batchJobs[batchID]; ok {
+			batchJob.UpdatedAt = time.Now()
+		}
 		s.mu.Unlock()
 	}
 }
 
 // Execute a test job
 func (s *Server) executeTest(job *TestJob) {
+	// Acquire semaphore slot (blocks if at max concurrency)
+	s.testSemaphore <- struct{}{}
 	defer func() {
+		<-s.testSemaphore // Release slot when done
 		if r := recover(); r != nil {
 			s.updateJob(job.ID, "failed", 100, fmt.Sprintf("Panic: %v", r))
 		}
 	}()
 
-	log.Printf("Starting test %s for URL: %s", job.ID, job.Request.URL)
+	log.Printf("Starting test %s for URL: %s (concurrent: %d/%d)",
+		job.ID, job.Request.URL, len(s.testSemaphore), s.maxConcurrent)
 
 	// Update status to running
 	s.updateJob(job.ID, "running", 10, "Initializing browser...")
