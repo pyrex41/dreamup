@@ -466,6 +466,9 @@ update msg model =
                         ReportView reportId ->
                             fetchReport model.apiBaseUrl reportId
 
+                        TestHistory ->
+                            fetchTestHistory model.apiBaseUrl initTestHistory
+
                         _ ->
                             Cmd.none
             in
@@ -2913,10 +2916,8 @@ viewHistoryRow report =
             ]
         , td [ class "px-6 py-4 whitespace-nowrap text-sm text-gray-900" ] [ text (formatDuration report.duration) ]
         , td [ class "px-6 py-4 whitespace-nowrap text-sm font-medium" ]
-            [ button
-                [ class "text-blue-600 hover:text-blue-900 transition-colors duration-150"
-                , onClick (NavigateToReport report.reportId)
-                ]
+            [ span
+                [ class "text-blue-600 hover:text-blue-900 transition-colors duration-150" ]
                 [ text "View Report" ]
             ]
         ]
