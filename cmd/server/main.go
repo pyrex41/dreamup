@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dreamup/qa-agent/internal/agent"
+	"github.com/dreamup/qa-agent/internal/db"
 	"github.com/dreamup/qa-agent/internal/evaluator"
 	"github.com/dreamup/qa-agent/internal/reporter"
 	"github.com/google/uuid"
@@ -107,6 +108,7 @@ type Server struct {
 	apiKey         string
 	testSemaphore  chan struct{} // Limits concurrent tests
 	maxConcurrent  int
+	db             *db.Database
 }
 
 func NewServer(port, apiKey string) *Server {
@@ -241,22 +243,39 @@ func (s *Server) handleTestReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// First check in-memory jobs (for active tests)
 	s.mu.RLock()
 	job, exists := s.jobs[testID]
 	s.mu.RUnlock()
 
-	if !exists {
+	if exists && job.Report != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(job.Report)
+		return
+	}
+
+	// If not in memory, check database
+	dbTest, err := s.db.GetTest(testID)
+	if err != nil {
 		http.Error(w, "Test not found", http.StatusNotFound)
 		return
 	}
 
-	if job.Report == nil {
-		http.Error(w, "Report not ready", http.StatusNotFound)
+	// Parse the report data JSON
+	if dbTest.ReportData == "" {
+		http.Error(w, "Report not available", http.StatusNotFound)
+		return
+	}
+
+	var report reporter.Report
+	if err := json.Unmarshal([]byte(dbTest.ReportData), &report); err != nil {
+		log.Printf("Failed to parse report for test %s: %v", testID, err)
+		http.Error(w, "Failed to parse report", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(job.Report)
+	json.NewEncoder(w).Encode(report)
 }
 
 // Serve screenshot files
@@ -328,25 +347,51 @@ func (s *Server) handleVideo(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// ReportSummary represents a test summary for the history page
+type ReportSummary struct {
+	ReportID     string  `json:"reportId"`
+	GameURL      string  `json:"gameUrl"`
+	Timestamp    string  `json:"timestamp"`
+	Status       string  `json:"status"`
+	OverallScore *int    `json:"overallScore"`
+	Duration     int     `json:"duration"`
+}
+
 // List all tests
 func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	// Get query parameters
+	statusFilter := r.URL.Query().Get("status")
+	if statusFilter == "" {
+		statusFilter = "all"
+	}
 
-	tests := make([]TestStatus, 0, len(s.jobs))
-	for _, job := range s.jobs {
-		tests = append(tests, TestStatus{
-			TestID:    job.ID,
-			Status:    job.Status,
-			Progress:  job.Progress,
-			Message:   job.Message,
-			CreatedAt: job.CreatedAt,
-			UpdatedAt: job.UpdatedAt,
+	// Query database for tests (default: 100 most recent)
+	dbTests, err := s.db.ListTests(statusFilter, 100, 0)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Database error: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert database records to ReportSummary for API response
+	summaries := make([]ReportSummary, 0, len(dbTests))
+	for _, dbTest := range dbTests {
+		var score *int
+		if dbTest.Score > 0 {
+			score = &dbTest.Score
+		}
+
+		summaries = append(summaries, ReportSummary{
+			ReportID:     dbTest.ID,
+			GameURL:      dbTest.GameURL,
+			Timestamp:    dbTest.CreatedAt.Format(time.RFC3339),
+			Status:       dbTest.Status,
+			OverallScore: score,
+			Duration:     dbTest.Duration,
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tests)
+	json.NewEncoder(w).Encode(summaries)
 }
 
 // Submit a batch test (up to 10 URLs)
@@ -904,6 +949,19 @@ func main() {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 
 	server := NewServer(port, apiKey)
+
+	// Initialize database
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "./data/dreamup.db"
+	}
+	database, err := db.New(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer database.Close()
+	server.db = database
+	log.Printf("📦 Database initialized: %s", dbPath)
 
 	// Setup routes
 	mux := http.NewServeMux()

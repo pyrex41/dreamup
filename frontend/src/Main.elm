@@ -4,7 +4,7 @@ import Browser
 import Browser.Navigation as Nav
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Html.Events exposing (onClick, onInput, onSubmit, onCheck)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
@@ -333,31 +333,13 @@ gameLibrary : List ExampleGame
 gameLibrary =
     [ { title = "Pac-Man"
       , description = "Classic arcade game - eat dots and avoid ghosts"
-      , url = "https://freepacman.org"
+      , url = "https://funhtml5games.com/pacman/index.html"
       , score = "Testing"
       , badgeType = "info"
       }
     , { title = "2048"
       , description = "Number puzzle game - combine tiles to reach 2048"
-      , url = "https://play2048.co"
-      , score = "Testing"
-      , badgeType = "info"
-      }
-    , { title = "Free Rider 2"
-      , description = "Kongregate - Physics-based bike game"
-      , url = "https://www.kongregate.com/en/games/onemorelevel/free-rider-2"
-      , score = "65/100"
-      , badgeType = "success"
-      }
-    , { title = "Subway Surfers"
-      , description = "Poki - Endless runner game"
-      , url = "https://www.poki.com/en/g/subway-surfers"
-      , score = "40/100"
-      , badgeType = "warning"
-      }
-    , { title = "Agar.io"
-      , description = "Simple multiplayer game"
-      , url = "https://agar.io"
+      , url = "https://funhtml5games.com/2048/index.html"
       , score = "Testing"
       , badgeType = "info"
       }
@@ -451,7 +433,7 @@ initBatchTestForm =
     { urls = []
     , urlInput = ""
     , maxDuration = 60
-    , headless = True  -- Batch tests are always headless
+    , headless = True  -- Batch tests always run in headless mode
     , validationError = Nothing
     , submitting = False
     , submitError = Nothing
@@ -532,7 +514,7 @@ type Msg
     | RandomUrlsGenerated (List Int)
     | RemoveBatchUrl Int
     | UpdateBatchMaxDuration String
-    | ToggleBatchHeadless
+    | ToggleBatchHeadless Bool
     | SubmitBatchTest
     | BatchTestSubmitted (Result Http.Error BatchTestSubmitResponse)
     | PollBatchStatus String
@@ -1221,13 +1203,13 @@ update msg model =
             in
             ( { model | batchTestForm = updatedForm }, Cmd.none )
 
-        ToggleBatchHeadless ->
+        ToggleBatchHeadless checked ->
             let
                 form =
                     model.batchTestForm
 
                 updatedForm =
-                    { form | headless = not form.headless }
+                    { form | headless = checked }
             in
             ( { model | batchTestForm = updatedForm }, Cmd.none )
 
@@ -1452,13 +1434,12 @@ fetchTestHistory : String -> TestHistoryState -> Cmd Msg
 fetchTestHistory apiBaseUrl history =
     let
         queryParams =
-            [ "page=" ++ String.fromInt history.currentPage
-            , "limit=" ++ String.fromInt history.itemsPerPage
+            [ "status=" ++ (if history.statusFilter == Nothing then "all" else Maybe.withDefault "all" history.statusFilter)
             ]
                 |> String.join "&"
     in
     getWithCors
-        (apiBaseUrl ++ "/reports?" ++ queryParams)
+        (apiBaseUrl ++ "/tests/list?" ++ queryParams)
         (Decode.list reportSummaryDecoder)
         TestHistoryFetched
 
@@ -1466,12 +1447,12 @@ fetchTestHistory apiBaseUrl history =
 reportSummaryDecoder : Decode.Decoder ReportSummary
 reportSummaryDecoder =
     Decode.map6 ReportSummary
-        (Decode.field "report_id" Decode.string)
-        (Decode.field "game_url" Decode.string)
+        (Decode.field "reportId" Decode.string)
+        (Decode.field "gameUrl" Decode.string)
         (Decode.field "timestamp" Decode.string)
         (Decode.field "status" Decode.string)
-        (Decode.maybe (Decode.at [ "score", "overall_score" ] Decode.int))
-        (Decode.field "duration_ms" Decode.int)
+        (Decode.maybe (Decode.field "overallScore" Decode.int))
+        (Decode.field "duration" Decode.int)
 
 
 reportDecoder : Decode.Decoder Report
@@ -1588,10 +1569,8 @@ isNetworkError error =
 -}
 corsHeaders : List Http.Header
 corsHeaders =
-    [ Http.header "Access-Control-Allow-Origin" "*"
-    , Http.header "Access-Control-Allow-Methods" "GET, POST, PUT, DELETE, OPTIONS"
-    , Http.header "Access-Control-Allow-Headers" "Content-Type"
-    ]
+    -- Client should not send CORS headers - these are only for server responses
+    []
 
 
 {-| Make a GET request with CORS headers
@@ -1992,7 +1971,6 @@ viewBatchTestSubmission model =
                     ]
 
                 -- Note: Batch tests always run in headless mode for better performance
-
                 , case form.submitError of
                     Just error ->
                         div [ class "text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-3" ] [ text error ]
@@ -2823,21 +2801,21 @@ truncateMessage message maxLength =
 {-| Subtask 4: Report Actions -}
 viewReportActions : Report -> Html Msg
 viewReportActions report =
-    div [ class "report-actions" ]
-        [ h3 [] [ text "Actions" ]
-        , div [ class "action-buttons" ]
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow p-6 mt-6" ]
+        [ h3 [ class "text-xl font-bold text-gray-900 dark:text-white mb-4" ] [ text "Actions" ]
+        , div [ class "flex flex-wrap gap-3" ]
             [ button
-                [ class "action-btn primary"
+                [ class "flex-1 min-w-[160px] px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
                 , onClick (CopyReportLink report.reportId)
                 ]
                 [ text "📋 Copy Share Link" ]
             , button
-                [ class "action-btn secondary"
+                [ class "flex-1 min-w-[160px] px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
                 , onClick (DownloadReportJson report)
                 ]
                 [ text "💾 Download JSON" ]
             , button
-                [ class "action-btn secondary"
+                [ class "flex-1 min-w-[160px] px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
                 , onClick (RerunTest report.gameUrl)
                 ]
                 [ text "🔄 Re-run Test" ]
