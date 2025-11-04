@@ -27,7 +27,11 @@ lambda-bootstrap
 # Test results and reports
 **/test-results
 **/reports
-**/*.html
+# Exclude HTML reports but keep frontend/index.html
+**/test-results/**/*.html
+**/reports/**/*.html
+
+# Exclude JSON reports but keep package.json, go.mod, elm.json
 **/*.json
 !**/go.mod
 !**/go.sum
@@ -38,6 +42,8 @@ lambda-bootstrap
 !**/frontend/package.json
 !**/frontend/package-lock.json
 !**/frontend/elm.json
+# Keep frontend HTML
+!**/frontend/**/*.html
 
 # Database
 **/data
