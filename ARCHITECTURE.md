@@ -464,13 +464,20 @@ func (d *Database) UpdateTestStatus(id, status string) error
 - **File-based**: Single file (`./data/dreamup.db`)
 - **ACID Compliant**: Crash-safe with transactions
 - **Fast**: 10,000+ reads/sec for our query patterns
-- **Portable**: Works on Lambda, Docker, bare metal
+- **Portable**: Works on Fly.io, Docker, bare metal
 
 **Why NOT PostgreSQL/MySQL?**
 - Overkill for single-server deployment
 - Requires separate database server (cost, maintenance)
 - Network latency vs in-process SQLite
 - SQLite is proven at scale (used by iOS, Android, browsers)
+
+**⚠️ Deployment Considerations**:
+- **Fly.io/Docker**: SQLite works perfectly with persistent volumes
+- **AWS Lambda**: `/tmp` is ephemeral - database lost on cold starts
+  - Solution: Use [Archil](https://docs.archil.com/getting-started/introduction) for SQLite-over-S3
+  - Or switch to PostgreSQL RDS for Lambda deployments
+  - See [Lambda Deployment](#4-aws-lambda-deployment) section for details
 
 **Connection Management**:
 
@@ -886,6 +893,39 @@ func main() {
 | /tmp storage | 10 GB | Clean up screenshots after upload |
 | Cold start | ~2s | Use provisioned concurrency for prod |
 | Package size | 250 MB | Go binary is ~20 MB (well under limit) |
+
+**⚠️ Important: SQLite Persistence in Lambda**
+
+Lambda's `/tmp` directory is **ephemeral** - it's wiped between cold starts. This means:
+
+- **No database persistence**: SQLite database is lost when Lambda scales to zero
+- **Current state**: Lambda only returns test reports via S3, no test history
+- **Workaround options**:
+  1. **Use PostgreSQL/RDS** for persistent database (adds cost and latency)
+  2. **Use Archil** (recommended): [Archil](https://docs.archil.com/getting-started/introduction) provides SQLite-over-S3 with minimal code changes
+  3. **Accept stateless**: Store all reports in S3, query S3 for history (slower)
+
+**Recommended: Archil for SQLite in Lambda**
+
+[Archil](https://archil.com) enables SQLite persistence in Lambda using S3 as the backing store:
+
+```go
+import "github.com/archilhq/archil-go"
+
+// Instead of sql.Open("sqlite3", "...")
+db, err := archil.Open("sqlite3", "s3://my-bucket/dreamup.db")
+```
+
+**Benefits**:
+- ✅ Same SQLite code - just change connection string
+- ✅ Automatic S3 sync with local caching
+- ✅ No cold start penalty (lazy loading)
+- ✅ ~$0.01/month S3 storage vs $20/month RDS
+- ✅ Sub-10ms query latency with smart caching
+
+**Status**: TBD - Archil integration planned for future Lambda deployments.
+
+For now, Lambda deployments are **stateless** (report-only, no history). For persistent test history, use the **Fly.io deployment** (see [DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ---
 
