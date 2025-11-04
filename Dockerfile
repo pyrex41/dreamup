@@ -27,10 +27,17 @@ RUN wget -O elm.gz https://github.com/elm/compiler/releases/download/0.19.1/bina
     chmod +x elm && \
     mv elm /usr/local/bin/
 
+# Copy only package files first
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
+
+# Install dependencies
 RUN pnpm install --frozen-lockfile
 
-COPY frontend/ ./
+# Copy source files (excluding node_modules due to .dockerignore)
+COPY frontend/src ./src/
+COPY frontend/index.html frontend/vite.config.js frontend/elm.json ./
+
+# Build the frontend
 RUN pnpm run build
 
 
