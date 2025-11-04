@@ -123,6 +123,15 @@ func NewServer(port, apiKey string) *Server {
 	}
 }
 
+// fileExists checks if a file exists
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
 // CORS middleware
 func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -985,6 +994,28 @@ func main() {
 	mux.HandleFunc("/api/videos/", server.corsMiddleware(server.handleVideo))
 	mux.HandleFunc("/api/batch-tests", server.corsMiddleware(server.handleBatchTestSubmit))
 	mux.HandleFunc("/api/batch-tests/", server.corsMiddleware(server.handleBatchTestStatus))
+
+	// Serve static files (frontend)
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = "./frontend/dist"
+	}
+
+	// Check if static directory exists
+	if _, err := os.Stat(staticDir); err == nil {
+		fs := http.FileServer(http.Dir(staticDir))
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Serve index.html for all non-API routes (SPA routing)
+			if r.URL.Path != "/" && !fileExists(filepath.Join(staticDir, r.URL.Path)) {
+				http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+				return
+			}
+			fs.ServeHTTP(w, r)
+		}))
+		log.Printf("📁 Serving static files from: %s", staticDir)
+	} else {
+		log.Printf("⚠️  Static directory not found: %s (API-only mode)", staticDir)
+	}
 
 	// Create HTTP server
 	srv := &http.Server{
