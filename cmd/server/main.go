@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -215,6 +216,43 @@ func (s *Server) handleTestReport(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(job.Report)
 }
 
+// Serve screenshot files
+func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
+	// Extract filename from path: /api/screenshots/{filename}
+	filename := r.URL.Path[len("/api/screenshots/"):]
+	if filename == "" {
+		http.Error(w, "Filename required", http.StatusBadRequest)
+		return
+	}
+
+	// Security: prevent directory traversal and only allow screenshot files
+	if strings.Contains(filename, "..") || strings.Contains(filename, "/") || !strings.HasPrefix(filename, "screenshot_") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	// Read screenshot from temp directory
+	tmpDir := os.TempDir()
+	filepath := tmpDir + "/" + filename
+
+	data, err := os.ReadFile(filepath)
+	if err != nil {
+		log.Printf("Failed to read screenshot %s: %v", filepath, err)
+		http.Error(w, "Screenshot not found", http.StatusNotFound)
+		return
+	}
+
+	// Determine content type based on file extension
+	contentType := "image/png"
+	if strings.HasSuffix(filename, ".jpg") || strings.HasSuffix(filename, ".jpeg") {
+		contentType = "image/jpeg"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
 // List all tests
 func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -249,8 +287,8 @@ func (s *Server) executeTest(job *TestJob) {
 	// Update status to running
 	s.updateJob(job.ID, "running", 10, "Initializing browser...")
 
-	// Create browser manager
-	bm, err := agent.NewBrowserManager()
+	// Create browser manager with headless setting from request
+	bm, err := agent.NewBrowserManager(job.Request.Headless)
 	if err != nil {
 		s.updateJob(job.ID, "failed", 100, fmt.Sprintf("Failed to create browser: %v", err))
 		return
@@ -301,35 +339,75 @@ func (s *Server) executeTest(job *TestJob) {
 
 	s.updateJob(job.ID, "running", 50, "Starting game...")
 
-	// Click start button
-	if clicked, err := detector.ClickStartButton(); err != nil {
-		log.Printf("Start button click: %v", err)
-	} else if clicked {
-		log.Printf("Game started")
+	// Click start button (try multiple times if needed)
+	startClicked := false
+	for i := 0; i < 3; i++ {
+		if clicked, err := detector.ClickStartButton(); err != nil {
+			log.Printf("Start button click attempt %d: %v", i+1, err)
+		} else if clicked {
+			log.Printf("Game started successfully on attempt %d", i+1)
+			startClicked = true
+			time.Sleep(1 * time.Second) // Give game time to initialize
+			break
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	s.updateJob(job.ID, "running", 60, "Simulating gameplay...")
-
-	// Wait for game to render
-	time.Sleep(2 * time.Second)
-
-	// Simulate gameplay using chromedp
-	gameplayActions := []struct {
-		key  string
-		desc string
-	}{
-		{"ArrowUp", "up"},
-		{"ArrowDown", "down"},
-		{"Space", "space"},
-		{"ArrowLeft", "left"},
-		{"ArrowRight", "right"},
+	if !startClicked {
+		log.Printf("Warning: Could not find/click start button, trying to interact with canvas...")
+		// Try clicking on canvas as fallback
+		canvasSelector, err := detector.GetGameCanvas()
+		if err == nil {
+			log.Printf("Found game canvas: %s", canvasSelector)
+			chromedp.Run(bm.GetContext(), chromedp.Click(canvasSelector, chromedp.ByQuery))
+			time.Sleep(1 * time.Second)
+		}
 	}
 
-	for _, action := range gameplayActions {
-		chromedp.Run(bm.GetContext(), chromedp.KeyEvent(action.key))
-		time.Sleep(200 * time.Millisecond)
+	s.updateJob(job.ID, "running", 55, "Simulating gameplay...")
+
+	// Wait for game to fully load and render
+	time.Sleep(3 * time.Second)
+
+	// Simulate realistic gameplay with varied interactions over time
+	// This gives the AI more meaningful data to evaluate
+	gameplayDuration := 10 * time.Second // Much longer gameplay
+	gameplayStart := time.Now()
+
+	log.Printf("Starting %v of interactive gameplay...", gameplayDuration)
+
+	// Gameplay loop - mix of keys, clicks, and waits
+	for time.Since(gameplayStart) < gameplayDuration {
+		progress := 55 + int(30*time.Since(gameplayStart).Seconds()/gameplayDuration.Seconds())
+		s.updateJob(job.ID, "running", progress, fmt.Sprintf("Playing game... %.0fs elapsed", time.Since(gameplayStart).Seconds()))
+
+		// Try clicking canvas to ensure focus
+		canvasSelector, _ := detector.GetGameCanvas()
+		if canvasSelector != "" {
+			chromedp.Run(bm.GetContext(), chromedp.Click(canvasSelector, chromedp.ByQuery))
+		}
+
+		// Send varied key presses (more realistic gameplay)
+		gameplayActions := []string{
+			"ArrowUp", "ArrowUp", // Jump or move up twice
+			"ArrowRight", "ArrowRight", "ArrowRight", // Move right
+			"Space", // Action key
+			"ArrowLeft", "ArrowLeft", // Move left
+			"ArrowDown", // Duck or move down
+			"Space", // Action again
+			"ArrowRight", // Continue moving
+		}
+
+		for _, key := range gameplayActions {
+			chromedp.Run(bm.GetContext(), chromedp.KeyEvent(key))
+			time.Sleep(150 * time.Millisecond) // Slightly faster inputs
+		}
+
+		// Brief pause between action sequences
+		time.Sleep(500 * time.Millisecond)
 	}
+
+	log.Printf("Gameplay simulation completed after %v", time.Since(gameplayStart))
 
 	s.updateJob(job.ID, "running", 70, "Capturing final screenshot...")
 
@@ -438,6 +516,7 @@ func main() {
 		}
 	}))
 	mux.HandleFunc("/api/reports/", server.corsMiddleware(server.handleTestReport))
+	mux.HandleFunc("/api/screenshots/", server.corsMiddleware(server.handleScreenshot))
 
 	// Create HTTP server
 	srv := &http.Server{

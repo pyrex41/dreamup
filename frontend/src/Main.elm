@@ -167,10 +167,8 @@ type alias TestForm =
 type alias TestStatus =
     { testId : String
     , status : String
-    , phase : String
     , progress : Int
-    , elapsedTime : Int
-    , error : Maybe String
+    , message : String
     }
 
 
@@ -270,7 +268,7 @@ init flags url key =
     ( { key = key
       , url = url
       , route = route
-      , apiBaseUrl = "http://localhost:8080/api"  -- Update with actual API URL
+      , apiBaseUrl = "/api"  -- Uses Vite proxy in dev, relative path in production
       , testForm = initTestForm
       , testStatus = Nothing
       , currentReport = Nothing
@@ -996,7 +994,7 @@ validateUrl url =
 
 type alias TestSubmitResponse =
     { testId : String
-    , estimatedCompletionTime : Int
+    , status : String
     }
 
 
@@ -1021,7 +1019,7 @@ testSubmitResponseDecoder : Decode.Decoder TestSubmitResponse
 testSubmitResponseDecoder =
     Decode.map2 TestSubmitResponse
         (Decode.field "testId" Decode.string)
-        (Decode.field "estimatedCompletionTime" Decode.int)
+        (Decode.field "status" Decode.string)
 
 
 pollTestStatus : String -> String -> Cmd Msg
@@ -1034,13 +1032,11 @@ pollTestStatus apiBaseUrl testId =
 
 testStatusDecoder : Decode.Decoder TestStatus
 testStatusDecoder =
-    Decode.map6 TestStatus
+    Decode.map4 TestStatus
         (Decode.field "testId" Decode.string)
         (Decode.field "status" Decode.string)
-        (Decode.field "phase" Decode.string)
         (Decode.field "progress" Decode.int)
-        (Decode.field "elapsedTime" Decode.int)
-        (Decode.maybe (Decode.field "error" Decode.string))
+        (Decode.field "message" Decode.string)
 
 
 fetchReport : String -> String -> Cmd Msg
@@ -1126,10 +1122,10 @@ screenshotInfoDecoder =
 consoleLogDecoder : Decode.Decoder ConsoleLog
 consoleLogDecoder =
     Decode.map4 ConsoleLog
-        (Decode.field "level" Decode.string)
-        (Decode.field "message" Decode.string)
-        (Decode.field "source" Decode.string)
-        (Decode.field "timestamp" Decode.string)
+        (Decode.field "Level" Decode.string)
+        (Decode.field "Message" Decode.string)
+        (Decode.field "Source" Decode.string)
+        (Decode.field "Timestamp" Decode.string)
 
 
 logSummaryDecoder : Decode.Decoder LogSummary
@@ -1246,7 +1242,7 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "DreamUp QA Agent Dashboard"
     , body =
-        [ div [ class "app-container" ]
+        [ div [ class "min-h-screen bg-gray-50 flex flex-col" ]
             [ viewHeader model
             , viewContent model
             , viewFooter
@@ -1257,28 +1253,40 @@ view model =
 
 viewHeader : Model -> Html Msg
 viewHeader model =
-    header [ class "header" ]
-        [ h1 [] [ text "DreamUp QA Agent" ]
-        , nav [ class "navigation" ]
-            [ a [ href "/" ] [ text "Home" ]
-            , a [ href "/submit" ] [ text "Submit Test" ]
-            , a [ href "/history" ] [ text "Test History" ]
+    header [ class "bg-slate-900 text-white shadow-lg" ]
+        [ div [ class "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" ]
+            [ div [ class "flex items-center justify-between" ]
+                [ h1 [ class "text-2xl font-bold tracking-tight" ] [ text "DreamUp QA Agent" ]
+                , div [ class "flex items-center gap-6" ]
+                    [ nav [ class "flex gap-4" ]
+                        [ a [ href "/", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Home" ]
+                        , a [ href "/submit", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Submit Test" ]
+                        , a [ href "/history", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Test History" ]
+                        ]
+                    , viewNetworkStatus model.networkStatus
+                    ]
+                ]
             ]
-        , viewNetworkStatus model.networkStatus
         ]
 
 
 viewNetworkStatus : NetworkStatus -> Html Msg
 viewNetworkStatus status =
     if status.isOnline then
-        span [ class "network-status online" ] [ text "●" ]
+        span [ class "flex items-center gap-2 text-emerald-400 text-sm" ]
+            [ span [ class "w-2 h-2 bg-emerald-400 rounded-full animate-pulse" ] []
+            , text "Online"
+            ]
     else
-        span [ class "network-status offline", title "Network connection lost" ] [ text "●" ]
+        span [ class "flex items-center gap-2 text-red-400 text-sm", title "Network connection lost" ]
+            [ span [ class "w-2 h-2 bg-red-400 rounded-full" ] []
+            , text "Offline"
+            ]
 
 
 viewContent : Model -> Html Msg
 viewContent model =
-    main_ [ class "main-content" ]
+    main_ [ class "flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8" ]
         [ case model.route of
             Home ->
                 viewHome
@@ -1302,12 +1310,31 @@ viewContent model =
 
 viewHome : Html Msg
 viewHome =
-    div [ class "page home" ]
-        [ h2 [] [ text "Welcome to DreamUp QA Agent" ]
-        , p [] [ text "An automated QA testing system for web games." ]
-        , div [ class "quick-actions" ]
-            [ a [ href "/submit", class "button primary" ] [ text "Submit New Test" ]
-            , a [ href "/history", class "button secondary" ] [ text "View Test History" ]
+    div [ class "space-y-8" ]
+        [ div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
+            [ h2 [ class "text-3xl font-bold text-gray-900 mb-4" ] [ text "Welcome to DreamUp QA Agent" ]
+            , p [ class "text-lg text-gray-600 mb-6" ] [ text "An automated QA testing system for web games. Test game functionality, performance, and compatibility with AI-powered analysis." ]
+            , div [ class "flex gap-4" ]
+                [ a [ href "/submit", class "inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200" ] [ text "Submit New Test" ]
+                , a [ href "/history", class "inline-flex items-center px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg shadow-sm transition-colors duration-200" ] [ text "View Test History" ]
+                ]
+            ]
+        , div [ class "grid grid-cols-1 md:grid-cols-3 gap-6" ]
+            [ div [ class "bg-white rounded-lg shadow-md p-6 border border-gray-200" ]
+                [ div [ class "text-4xl mb-3" ] [ text "🎮" ]
+                , h3 [ class "text-xl font-semibold text-gray-900 mb-2" ] [ text "Automated Testing" ]
+                , p [ class "text-gray-600" ] [ text "Submit game URLs for automated QA testing with browser automation." ]
+                ]
+            , div [ class "bg-white rounded-lg shadow-md p-6 border border-gray-200" ]
+                [ div [ class "text-4xl mb-3" ] [ text "🤖" ]
+                , h3 [ class "text-xl font-semibold text-gray-900 mb-2" ] [ text "AI Analysis" ]
+                , p [ class "text-gray-600" ] [ text "Get AI-powered insights on game functionality, errors, and performance." ]
+                ]
+            , div [ class "bg-white rounded-lg shadow-md p-6 border border-gray-200" ]
+                [ div [ class "text-4xl mb-3" ] [ text "📊" ]
+                , h3 [ class "text-xl font-semibold text-gray-900 mb-2" ] [ text "Detailed Reports" ]
+                , p [ class "text-gray-600" ] [ text "View comprehensive test reports with screenshots and console logs." ]
+                ]
             ]
         ]
 
@@ -1318,152 +1345,244 @@ viewTestSubmission model =
         form =
             model.testForm
     in
-    div [ class "page test-submission" ]
-        [ h2 [] [ text "Submit New Test" ]
-        , p [] [ text "Enter a game URL to start automated QA testing." ]
-        , Html.form [ onSubmit SubmitTest, class "test-form" ]
-            [ div [ class "form-group" ]
-                [ label [ for "game-url" ] [ text "Game URL" ]
-                , input
-                    [ type_ "text"
-                    , id "game-url"
-                    , placeholder "https://example.com/game"
-                    , value form.gameUrl
-                    , onInput UpdateGameUrl
-                    , disabled form.submitting
-                    , class "form-input"
+    div [ class "space-y-8" ]
+        [ div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
+            [ h2 [ class "text-2xl font-bold text-gray-900 mb-2" ] [ text "Submit New Test" ]
+            , p [ class "text-gray-600 mb-6" ] [ text "Enter a game URL to start automated QA testing." ]
+            , Html.form [ onSubmit SubmitTest, class "space-y-6" ]
+                [ div [ class "space-y-2" ]
+                    [ label [ for "game-url", class "block text-sm font-medium text-gray-700" ] [ text "Game URL" ]
+                    , input
+                        [ type_ "text"
+                        , id "game-url"
+                        , placeholder "https://example.com/game"
+                        , value form.gameUrl
+                        , onInput UpdateGameUrl
+                        , disabled form.submitting
+                        , class "w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                        ]
+                        []
+                    , case form.validationError of
+                        Just error ->
+                            div [ class "text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-2" ] [ text error ]
+
+                        Nothing ->
+                            text ""
                     ]
-                    []
-                , case form.validationError of
+                , div [ class "space-y-2" ]
+                    [ label [ for "max-duration", class "block text-sm font-medium text-gray-700" ]
+                        [ text ("Max Duration: " ++ String.fromInt form.maxDuration ++ "s") ]
+                    , input
+                        [ type_ "range"
+                        , id "max-duration"
+                        , Html.Attributes.min "60"
+                        , Html.Attributes.max "300"
+                        , value (String.fromInt form.maxDuration)
+                        , onInput UpdateMaxDuration
+                        , disabled form.submitting
+                        , class "w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:cursor-not-allowed"
+                        ]
+                        []
+                    , p [ class "text-sm text-gray-500" ] [ text "Maximum time allowed for the test (60-300 seconds)" ]
+                    ]
+                , div [ class "flex items-center" ]
+                    [ label [ class "flex items-center cursor-pointer" ]
+                        [ input
+                            [ type_ "checkbox"
+                            , checked form.headless
+                            , onClick ToggleHeadless
+                            , disabled form.submitting
+                            , class "w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 disabled:cursor-not-allowed"
+                            ]
+                            []
+                        , span [ class "ml-2 text-sm font-medium text-gray-700" ] [ text "Run in headless mode (no visible browser)" ]
+                        ]
+                    ]
+                , case form.submitError of
                     Just error ->
-                        div [ class "error" ] [ text error ]
+                        div [ class "text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-4 py-3" ] [ text error ]
 
                     Nothing ->
                         text ""
-                ]
-            , div [ class "form-group" ]
-                [ label [ for "max-duration" ]
-                    [ text ("Max Duration: " ++ String.fromInt form.maxDuration ++ "s") ]
-                , input
-                    [ type_ "range"
-                    , id "max-duration"
-                    , Html.Attributes.min "60"
-                    , Html.Attributes.max "300"
-                    , value (String.fromInt form.maxDuration)
-                    , onInput UpdateMaxDuration
-                    , disabled form.submitting
-                    , class "form-slider"
-                    ]
-                    []
-                , p [ class "help-text" ] [ text "Maximum time allowed for the test (60-300 seconds)" ]
-                ]
-            , div [ class "form-group" ]
-                [ label [ class "checkbox-label" ]
-                    [ input
-                        [ type_ "checkbox"
-                        , checked form.headless
-                        , onClick ToggleHeadless
-                        , disabled form.submitting
+                , div [ class "flex gap-3 pt-4" ]
+                    [ button
+                        [ type_ "submit"
+                        , class "px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        , disabled (form.submitting || String.isEmpty form.gameUrl)
                         ]
-                        []
-                    , text " Run in headless mode (no visible browser)"
+                        [ text
+                            (if form.submitting then
+                                "Submitting..."
+
+                             else
+                                "Start Test"
+                            )
+                        ]
+                    , a [ href "/", class "px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg shadow-sm transition-colors" ] [ text "Cancel" ]
                     ]
                 ]
-            , case form.submitError of
-                Just error ->
-                    div [ class "error" ] [ text error ]
-
-                Nothing ->
-                    text ""
-            , div [ class "form-actions" ]
-                [ button
-                    [ type_ "submit"
-                    , class "button primary"
-                    , disabled (form.submitting || String.isEmpty form.gameUrl)
-                    ]
-                    [ text
-                        (if form.submitting then
-                            "Submitting..."
-
-                         else
-                            "Start Test"
-                        )
-                    ]
-                , a [ href "/", class "button secondary" ] [ text "Cancel" ]
+            ]
+        , div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
+            [ h3 [ class "text-xl font-bold text-gray-900 mb-2" ] [ text "Example Games (Click to Test)" ]
+            , p [ class "text-sm text-gray-600 mb-6" ] [ text "These games have been tested and work well with our system:" ]
+            , div [ class "grid grid-cols-1 md:grid-cols-3 gap-4" ]
+                [ viewExampleGame
+                    "Free Rider 2"
+                    "Kongregate - Physics-based bike game"
+                    "https://www.kongregate.com/en/games/onemorelevel/free-rider-2"
+                    "65/100"
+                    "success"
+                , viewExampleGame
+                    "Subway Surfers"
+                    "Poki - Endless runner game"
+                    "https://www.poki.com/en/g/subway-surfers"
+                    "40/100"
+                    "warning"
+                , viewExampleGame
+                    "Agar.io"
+                    "Simple multiplayer game"
+                    "https://agar.io"
+                    "Testing"
+                    "info"
                 ]
+            ]
+        ]
+
+
+viewExampleGame : String -> String -> String -> String -> String -> Html Msg
+viewExampleGame title description url score badgeType =
+    let
+        badgeColor =
+            case badgeType of
+                "success" -> "bg-green-100 text-green-800 border-green-200"
+                "warning" -> "bg-yellow-100 text-yellow-800 border-yellow-200"
+                _ -> "bg-blue-100 text-blue-800 border-blue-200"
+    in
+    div
+        [ class "border border-gray-200 rounded-lg hover:shadow-lg transition-shadow cursor-pointer bg-white overflow-hidden"
+        , onClick (UpdateGameUrl url)
+        ]
+        [ div [ class "p-4 space-y-3" ]
+            [ div [ class "flex items-start justify-between" ]
+                [ h4 [ class "font-semibold text-gray-900 text-lg" ] [ text title ]
+                , span [ class ("px-2 py-1 text-xs font-medium rounded border " ++ badgeColor) ] [ text score ]
+                ]
+            , p [ class "text-sm text-gray-600" ] [ text description ]
+            , code [ class "block text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200 truncate" ] [ text url ]
+            , button
+                [ class "w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
+                , type_ "button"
+                , onClick (UpdateGameUrl url)
+                ]
+                [ text "Use This URL" ]
             ]
         ]
 
 
 viewTestStatus : Model -> String -> Html Msg
 viewTestStatus model testId =
-    div [ class "page test-status" ]
-        [ h2 [] [ text "Test Execution Status" ]
-        , case model.testStatus of
-            Just status ->
-                viewStatusDetails status
+    div [ class "max-w-4xl mx-auto space-y-6" ]
+        [ div [ class "bg-white rounded-lg shadow-md p-8 border border-gray-200" ]
+            [ h2 [ class "text-2xl font-bold text-gray-900 mb-6" ] [ text "Test Execution Status" ]
+            , case model.testStatus of
+                Just status ->
+                    viewStatusDetails status
 
-            Nothing ->
-                div [ class "loading" ]
-                    [ div [ class "spinner" ] []
-                    , p [] [ text "Loading test status..." ]
-                    ]
+                Nothing ->
+                    div [ class "flex flex-col items-center justify-center py-12" ]
+                        [ div [ class "animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mb-4" ] []
+                        , p [ class "text-gray-600" ] [ text "Loading test status..." ]
+                        ]
+            ]
         ]
 
 
 viewStatusDetails : TestStatus -> Html Msg
 viewStatusDetails status =
-    div [ class "status-details" ]
-        [ div [ class "status-header" ]
-            [ div [ class "status-badge", class (statusClass status.status) ]
-                [ text (String.toUpper status.status) ]
-            , p [ class "test-id" ] [ text ("Test ID: " ++ status.testId) ]
+    let
+        (badgeColor, badgeText) = statusBadge status.status
+    in
+    div [ class "space-y-6" ]
+        [ div [ class "flex items-center justify-between" ]
+            [ div [ class ("inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold " ++ badgeColor) ]
+                [ text badgeText ]
+            , p [ class "text-sm text-gray-500" ] [ text ("Test ID: " ++ status.testId) ]
             ]
-        , div [ class "status-info" ]
-            [ div [ class "info-item" ]
-                [ span [ class "label" ] [ text "Phase:" ]
-                , span [ class "value" ] [ text status.phase ]
-                ]
-            , div [ class "info-item" ]
-                [ span [ class "label" ] [ text "Elapsed Time:" ]
-                , span [ class "value" ] [ text (formatTime status.elapsedTime) ]
+        , div [ class "bg-gray-50 rounded-lg p-4 border border-gray-200" ]
+            [ div [ class "flex items-center justify-between mb-2" ]
+                [ span [ class "text-sm font-medium text-gray-700" ] [ text "Current Status:" ]
+                , span [ class "text-sm text-gray-900 font-semibold" ] [ text status.message ]
                 ]
             ]
-        , div [ class "progress-section" ]
-            [ div [ class "progress-label" ]
-                [ text ("Progress: " ++ String.fromInt status.progress ++ "%") ]
-            , div [ class "progress-bar-container" ]
+        , div [ class "space-y-2" ]
+            [ div [ class "flex items-center justify-between text-sm" ]
+                [ span [ class "font-medium text-gray-700" ] [ text "Progress" ]
+                , span [ class "font-semibold text-gray-900" ] [ text (String.fromInt status.progress ++ "%") ]
+                ]
+            , div [ class "w-full bg-gray-200 rounded-full h-3 overflow-hidden" ]
                 [ div
-                    [ class "progress-bar-fill"
+                    [ class "bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
                     , style "width" (String.fromInt status.progress ++ "%")
                     ]
                     []
                 ]
             ]
-        , case status.error of
-            Just error ->
-                div [ class "error" ] [ text ("Error: " ++ error) ]
-
-            Nothing ->
-                text ""
-        , if status.status == "completed" then
-            div [ class "actions" ]
-                [ a [ href ("/report/" ++ status.testId), class "button primary" ]
-                    [ text "View Report" ]
-                , a [ href "/", class "button secondary" ] [ text "Back to Home" ]
-                ]
-
-          else if status.status == "failed" then
-            div [ class "actions" ]
-                [ a [ href "/", class "button secondary" ] [ text "Back to Home" ]
-                , a [ href "/submit", class "button primary" ] [ text "Try Again" ]
+        , if status.status == "failed" then
+            div [ class "bg-red-50 border border-red-200 rounded-lg p-4" ]
+                [ div [ class "flex items-start" ]
+                    [ div [ class "flex-shrink-0" ]
+                        [ span [ class "text-red-600 text-xl" ] [ text "⚠" ]
+                        ]
+                    , div [ class "ml-3" ]
+                        [ h3 [ class "text-sm font-medium text-red-800 mb-1" ] [ text "Test Failed" ]
+                        , p [ class "text-sm text-red-700" ] [ text status.message ]
+                        ]
+                    ]
                 ]
 
           else
-            div [ class "status-message" ]
-                [ p [] [ text "Test is running... This page will update automatically." ]
+            text ""
+        , if status.status == "completed" then
+            div [ class "flex gap-3 pt-4" ]
+                [ a [ href ("/report/" ++ status.testId), class "flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors text-center" ]
+                    [ text "View Full Report" ]
+                , a [ href "/", class "px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg shadow-sm transition-colors" ] [ text "Home" ]
+                ]
+
+          else if status.status == "failed" then
+            div [ class "flex gap-3 pt-4" ]
+                [ a [ href "/submit", class "flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors text-center" ] [ text "Try Again" ]
+                , a [ href "/", class "px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg shadow-sm transition-colors" ] [ text "Home" ]
+                ]
+
+          else
+            div [ class "bg-blue-50 border border-blue-200 rounded-lg p-4" ]
+                [ div [ class "flex items-center" ]
+                    [ div [ class "animate-pulse flex-shrink-0" ]
+                        [ span [ class "text-blue-600 text-xl" ] [ text "●" ]
+                        ]
+                    , div [ class "ml-3" ]
+                        [ p [ class "text-sm text-blue-800 font-medium" ] [ text "Test is running... This page will update automatically." ]
+                        ]
+                    ]
                 ]
         ]
+
+
+statusBadge : String -> (String, String)
+statusBadge status =
+    case status of
+        "completed" ->
+            ("bg-green-100 text-green-800 border border-green-200", "✓ COMPLETED")
+
+        "failed" ->
+            ("bg-red-100 text-red-800 border border-red-200", "✗ FAILED")
+
+        "running" ->
+            ("bg-blue-100 text-blue-800 border border-blue-200", "● RUNNING")
+
+        _ ->
+            ("bg-gray-100 text-gray-800 border border-gray-200", "○ PENDING")
 
 
 statusClass : String -> String
@@ -2185,6 +2304,26 @@ viewScreenshotDisplay viewer current allScreenshots =
         ]
 
 
+-- Helper function to convert screenshot paths to API URLs
+screenshotToUrl : ScreenshotInfo -> String
+screenshotToUrl screenshot =
+    case screenshot.s3Url of
+        Just url ->
+            url
+
+        Nothing ->
+            -- Extract filename from local path and use API endpoint
+            let
+                filename =
+                    screenshot.filepath
+                        |> String.split "/"
+                        |> List.reverse
+                        |> List.head
+                        |> Maybe.withDefault ""
+            in
+            "/api/screenshots/" ++ filename
+
+
 viewSideBySide : ScreenshotInfo -> List ScreenshotInfo -> Html Msg
 viewSideBySide current allScreenshots =
     let
@@ -2192,11 +2331,11 @@ viewSideBySide current allScreenshots =
             List.head allScreenshots
 
         imageUrl =
-            Maybe.withDefault current.filepath current.s3Url
+            screenshotToUrl current
 
         prevUrl =
             previous
-                |> Maybe.andThen (\p -> Maybe.withDefault p.filepath p.s3Url |> Just)
+                |> Maybe.map screenshotToUrl
                 |> Maybe.withDefault imageUrl
     in
     div [ class "view-sidebyside" ]
@@ -2218,11 +2357,11 @@ viewOverlay viewer current allScreenshots =
             List.head allScreenshots
 
         imageUrl =
-            Maybe.withDefault current.filepath current.s3Url
+            screenshotToUrl current
 
         prevUrl =
             previous
-                |> Maybe.andThen (\p -> Maybe.withDefault p.filepath p.s3Url |> Just)
+                |> Maybe.map screenshotToUrl
                 |> Maybe.withDefault imageUrl
 
         opacityValue =
@@ -2258,7 +2397,7 @@ viewDifference : ScreenshotInfo -> List ScreenshotInfo -> Html Msg
 viewDifference current allScreenshots =
     let
         imageUrl =
-            Maybe.withDefault current.filepath current.s3Url
+            screenshotToUrl current
     in
     div [ class "view-difference" ]
         [ div [ class "difference-notice" ]
@@ -2287,7 +2426,7 @@ viewThumbnail model index screenshot =
             List.member index viewer.loadedImages
 
         imageUrl =
-            Maybe.withDefault screenshot.filepath screenshot.s3Url
+            screenshotToUrl screenshot
     in
     div
         [ class
@@ -2683,15 +2822,20 @@ truncateUrl url maxLength =
 
 viewNotFound : Html Msg
 viewNotFound =
-    div [ class "page not-found" ]
-        [ h2 [] [ text "404 - Page Not Found" ]
-        , p [] [ text "The page you are looking for does not exist." ]
-        , a [ href "/" ] [ text "Go Home" ]
+    div [ class "flex items-center justify-center min-h-96" ]
+        [ div [ class "text-center space-y-4" ]
+            [ div [ class "text-6xl font-bold text-gray-300" ] [ text "404" ]
+            , h2 [ class "text-2xl font-semibold text-gray-900" ] [ text "Page Not Found" ]
+            , p [ class "text-gray-600" ] [ text "The page you are looking for does not exist." ]
+            , a [ href "/", class "inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg shadow-sm transition-colors duration-200" ] [ text "Go Home" ]
+            ]
         ]
 
 
 viewFooter : Html Msg
 viewFooter =
-    footer [ class "footer" ]
-        [ p [] [ text "© 2025 DreamUp QA Agent" ]
+    footer [ class "bg-slate-900 text-gray-400 mt-auto" ]
+        [ div [ class "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6" ]
+            [ p [ class "text-center text-sm" ] [ text "© 2025 DreamUp QA Agent - Automated QA Testing System" ]
+            ]
         ]

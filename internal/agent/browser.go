@@ -16,12 +16,12 @@ type BrowserManager struct {
 	cancel     context.CancelFunc
 }
 
-// NewBrowserManager creates a new browser manager with headless Chrome
-func NewBrowserManager() (*BrowserManager, error) {
-	// Create allocator context with headless Chrome
+// NewBrowserManager creates a new browser manager
+func NewBrowserManager(headless bool) (*BrowserManager, error) {
+	// Create allocator context with Chrome
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
-		chromedp.Flag("headless", true),
-		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("headless", headless),
+		chromedp.Flag("disable-gpu", headless), // Only disable GPU in headless mode
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)

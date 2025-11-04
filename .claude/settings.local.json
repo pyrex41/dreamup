@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(task-master show:*)"
+      "Bash(task-master show:*)",
+      "WebSearch",
+      "WebFetch(domain:www.pacenthink.io)"
     ],
     "deny": [],
     "ask": []

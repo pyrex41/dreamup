@@ -91,8 +91,8 @@ func HandleRequest(ctx context.Context, event LambdaEvent) (LambdaResponse, erro
 	var logFilepath string
 
 	err := agent.WithRetry(testCtx, func() error {
-		// Create browser manager
-		bm, err := agent.NewBrowserManager()
+		// Create browser manager (always headless in lambda)
+		bm, err := agent.NewBrowserManager(true)
 		if err != nil {
 			return agent.NewBrowserError("failed to create browser", err)
 		}
