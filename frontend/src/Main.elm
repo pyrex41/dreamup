@@ -2735,25 +2735,29 @@ viewTestHistory model =
                 |> List.drop startIndex
                 |> List.take history.itemsPerPage
     in
-    div [ class "page test-history" ]
-        [ h2 [] [ text "Test History" ]
+    div [ class "space-y-6" ]
+        [ h2 [ class "text-3xl font-bold text-gray-900" ] [ text "Test History" ]
         , -- Subtask 3: Filtering and Sorting Controls
           viewHistoryControls history
         , -- Loading/Error States
           if history.loading then
-            div [ class "loading" ] [ text "Loading test history..." ]
+            div [ class "flex items-center justify-center py-12" ]
+                [ div [ class "text-lg text-gray-600" ] [ text "Loading test history..." ]
+                ]
 
           else
             case history.error of
                 Just errorMsg ->
-                    div [ class "error" ] [ text ("Error: " ++ errorMsg) ]
+                    div [ class "bg-red-50 border border-red-200 rounded-lg p-4 text-red-800" ]
+                        [ text ("Error: " ++ errorMsg) ]
 
                 Nothing ->
                     if List.isEmpty filteredReports then
-                        div [ class "empty-state" ] [ text "No tests found matching your filters." ]
+                        div [ class "bg-gray-50 border border-gray-200 rounded-lg p-8 text-center text-gray-600" ]
+                            [ text "No tests found matching your filters." ]
 
                     else
-                        div []
+                        div [ class "space-y-4" ]
                             [ -- Subtask 2: History Table
                               viewHistoryTable paginatedReports history
                             , -- Subtask 4: Pagination Controls
@@ -2765,24 +2769,27 @@ viewTestHistory model =
 {-| Subtask 3: Filter and Sort Controls -}
 viewHistoryControls : TestHistoryState -> Html Msg
 viewHistoryControls history =
-    div [ class "history-controls" ]
-        [ div [ class "history-filters" ]
+    div [ class "bg-white rounded-lg shadow-md border border-gray-200 p-6 space-y-4" ]
+        [ div [ class "flex flex-col md:flex-row md:items-center md:justify-between gap-4" ]
             [ -- URL Search
-              div [ class "filter-group" ]
-                [ label [] [ text "Search URL:" ]
+              div [ class "flex-1" ]
+                [ label [ class "block text-sm font-medium text-gray-700 mb-2" ] [ text "Search URL:" ]
                 , input
                     [ type_ "text"
                     , placeholder "Filter by game URL..."
                     , value history.urlSearchQuery
                     , onInput UpdateUrlSearch
-                    , class "url-search-input"
+                    , class "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     ]
                     []
                 ]
             , -- Status Filter
-              div [ class "filter-group" ]
-                [ label [] [ text "Status:" ]
-                , select [ onInput UpdateStatusFilter, class "status-filter" ]
+              div [ class "flex-1" ]
+                [ label [ class "block text-sm font-medium text-gray-700 mb-2" ] [ text "Status:" ]
+                , select
+                    [ onInput UpdateStatusFilter
+                    , class "w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    ]
                     [ option [ value "" ] [ text "All" ]
                     , option [ value "completed" ] [ text "Completed" ]
                     , option [ value "failed" ] [ text "Failed" ]
@@ -2791,16 +2798,18 @@ viewHistoryControls history =
                 ]
             ]
         , -- Sorting Controls
-          div [ class "history-sorting" ]
-            [ label [] [ text "Sort by:" ]
-            , div [ class "sort-buttons" ]
-                [ viewSortButton history.sortBy SortByTimestamp "Timestamp"
-                , viewSortButton history.sortBy SortByScore "Score"
-                , viewSortButton history.sortBy SortByDuration "Duration"
-                , viewSortButton history.sortBy SortByStatus "Status"
+          div [ class "flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-4 border-t border-gray-200" ]
+            [ div [ class "flex items-center gap-3" ]
+                [ label [ class "text-sm font-medium text-gray-700" ] [ text "Sort by:" ]
+                , div [ class "flex gap-2" ]
+                    [ viewSortButton history.sortBy SortByTimestamp "Timestamp"
+                    , viewSortButton history.sortBy SortByScore "Score"
+                    , viewSortButton history.sortBy SortByDuration "Duration"
+                    , viewSortButton history.sortBy SortByStatus "Status"
+                    ]
                 ]
             , button
-                [ class "sort-order-btn"
+                [ class "px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors duration-200"
                 , onClick ToggleSortOrder
                 ]
                 [ text
@@ -2820,13 +2829,11 @@ viewSortButton : SortField -> SortField -> String -> Html Msg
 viewSortButton currentSort field label =
     button
         [ class
-            ("sort-btn"
-                ++ (if currentSort == field then
-                        " active"
+            (if currentSort == field then
+                "px-3 py-1.5 bg-blue-600 text-white font-medium rounded-lg shadow-sm transition-colors duration-200"
 
-                    else
-                        ""
-                   )
+             else
+                "px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors duration-200"
             )
         , onClick (ChangeSortField field)
         ]
@@ -2836,19 +2843,19 @@ viewSortButton currentSort field label =
 {-| Subtask 2: History Table -}
 viewHistoryTable : List ReportSummary -> TestHistoryState -> Html Msg
 viewHistoryTable reports history =
-    div [ class "history-table-container" ]
-        [ table [ class "history-table" ]
-            [ thead []
+    div [ class "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden" ]
+        [ table [ class "min-w-full divide-y divide-gray-200" ]
+            [ thead [ class "bg-gray-50" ]
                 [ tr []
-                    [ th [] [ text "Timestamp" ]
-                    , th [] [ text "Game URL" ]
-                    , th [] [ text "Status" ]
-                    , th [] [ text "Score" ]
-                    , th [] [ text "Duration" ]
-                    , th [] [ text "Actions" ]
+                    [ th [ class "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" ] [ text "Timestamp" ]
+                    , th [ class "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" ] [ text "Game URL" ]
+                    , th [ class "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" ] [ text "Status" ]
+                    , th [ class "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" ] [ text "Score" ]
+                    , th [ class "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" ] [ text "Duration" ]
+                    , th [ class "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" ] [ text "Actions" ]
                     ]
                 ]
-            , tbody []
+            , tbody [ class "bg-white divide-y divide-gray-200" ]
                 (List.map viewHistoryRow reports)
             ]
         ]
@@ -2857,28 +2864,54 @@ viewHistoryTable reports history =
 viewHistoryRow : ReportSummary -> Html Msg
 viewHistoryRow report =
     tr
-        [ class ("history-row status-" ++ report.status)
+        [ class "hover:bg-gray-50 cursor-pointer transition-colors duration-150"
         , onClick (NavigateToReport report.reportId)
         ]
-        [ td [ class "timestamp-cell" ] [ text (formatTimestamp report.timestamp) ]
-        , td [ class "url-cell" ] [ text (truncateUrl report.gameUrl 50) ]
-        , td []
-            [ span [ class ("status-badge status-" ++ report.status) ]
+        [ td [ class "px-6 py-4 whitespace-nowrap text-sm text-gray-900" ] [ text (formatTimestamp report.timestamp) ]
+        , td [ class "px-6 py-4 text-sm text-gray-900" ] [ text (truncateUrl report.gameUrl 50) ]
+        , td [ class "px-6 py-4 whitespace-nowrap" ]
+            [ span
+                [ class
+                    (case report.status of
+                        "completed" ->
+                            "px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800"
+
+                        "failed" ->
+                            "px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800"
+
+                        "running" ->
+                            "px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800"
+
+                        _ ->
+                            "px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800"
+                    )
+                ]
                 [ text (String.toUpper report.status) ]
             ]
-        , td [ class "score-cell" ]
+        , td [ class "px-6 py-4 whitespace-nowrap text-sm text-gray-900" ]
             [ case report.overallScore of
                 Just score ->
-                    span [ class ("score-value score-" ++ scoreClass score) ]
+                    span
+                        [ class
+                            (if score >= 80 then
+                                "font-semibold text-green-600"
+
+                             else if score >= 50 then
+                                "font-semibold text-yellow-600"
+
+                             else
+                                "font-semibold text-red-600"
+                            )
+                        ]
                         [ text (String.fromInt score ++ "/100") ]
 
                 Nothing ->
-                    span [ class "score-na" ] [ text "N/A" ]
+                    span [ class "text-gray-400" ] [ text "N/A" ]
             ]
-        , td [ class "duration-cell" ] [ text (formatDuration report.duration) ]
-        , td [ class "actions-cell" ]
+        , td [ class "px-6 py-4 whitespace-nowrap text-sm text-gray-900" ] [ text (formatDuration report.duration) ]
+        , td [ class "px-6 py-4 whitespace-nowrap text-sm font-medium" ]
             [ button
-                [ class "view-report-btn"
+                [ class "text-blue-600 hover:text-blue-900 transition-colors duration-150"
                 , onClick (NavigateToReport report.reportId)
                 ]
                 [ text "View Report" ]
@@ -2905,37 +2938,63 @@ viewHistoryPagination history totalItems =
         canGoNext =
             history.currentPage < totalPages
     in
-    div [ class "history-pagination" ]
-        [ div [ class "pagination-info" ]
-            [ text ("Showing " ++ String.fromInt startItem ++ "-" ++ String.fromInt endItem ++ " of " ++ String.fromInt totalItems ++ " tests")
-            ]
-        , div [ class "pagination-controls" ]
-            [ button
-                [ class "pagination-btn"
-                , onClick (ChangeHistoryPage 1)
-                , disabled (not canGoPrevious)
+    div [ class "bg-white rounded-lg shadow-md border border-gray-200 px-6 py-4" ]
+        [ div [ class "flex flex-col sm:flex-row items-center justify-between gap-4" ]
+            [ div [ class "text-sm text-gray-700" ]
+                [ text ("Showing " ++ String.fromInt startItem ++ "-" ++ String.fromInt endItem ++ " of " ++ String.fromInt totalItems ++ " tests")
                 ]
-                [ text "First" ]
-            , button
-                [ class "pagination-btn"
-                , onClick (ChangeHistoryPage (history.currentPage - 1))
-                , disabled (not canGoPrevious)
+            , div [ class "flex items-center gap-2" ]
+                [ button
+                    [ class
+                        (if canGoPrevious then
+                            "px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors duration-150"
+
+                         else
+                            "px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm font-medium text-gray-400 cursor-not-allowed"
+                        )
+                    , onClick (ChangeHistoryPage 1)
+                    , disabled (not canGoPrevious)
+                    ]
+                    [ text "First" ]
+                , button
+                    [ class
+                        (if canGoPrevious then
+                            "px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors duration-150"
+
+                         else
+                            "px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm font-medium text-gray-400 cursor-not-allowed"
+                        )
+                    , onClick (ChangeHistoryPage (history.currentPage - 1))
+                    , disabled (not canGoPrevious)
+                    ]
+                    [ text "◀ Previous" ]
+                , span [ class "px-4 py-2 text-sm font-medium text-gray-700" ]
+                    [ text ("Page " ++ String.fromInt history.currentPage ++ " of " ++ String.fromInt totalPages) ]
+                , button
+                    [ class
+                        (if canGoNext then
+                            "px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors duration-150"
+
+                         else
+                            "px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm font-medium text-gray-400 cursor-not-allowed"
+                        )
+                    , onClick (ChangeHistoryPage (history.currentPage + 1))
+                    , disabled (not canGoNext)
+                    ]
+                    [ text "Next ▶" ]
+                , button
+                    [ class
+                        (if canGoNext then
+                            "px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors duration-150"
+
+                         else
+                            "px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm font-medium text-gray-400 cursor-not-allowed"
+                        )
+                    , onClick (ChangeHistoryPage totalPages)
+                    , disabled (not canGoNext)
+                    ]
+                    [ text "Last" ]
                 ]
-                [ text "◀ Previous" ]
-            , span [ class "page-indicator" ]
-                [ text ("Page " ++ String.fromInt history.currentPage ++ " of " ++ String.fromInt totalPages) ]
-            , button
-                [ class "pagination-btn"
-                , onClick (ChangeHistoryPage (history.currentPage + 1))
-                , disabled (not canGoNext)
-                ]
-                [ text "Next ▶" ]
-            , button
-                [ class "pagination-btn"
-                , onClick (ChangeHistoryPage totalPages)
-                , disabled (not canGoNext)
-                ]
-                [ text "Last" ]
             ]
         ]
 
