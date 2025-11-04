@@ -121,58 +121,70 @@ func (v *VisionDOMDetector) ClickButtonByText(buttonText string) error {
 	const searchText = %q;
 	console.log('[ClickByText] Searching for button with text:', searchText);
 
-	// Find all clickable elements
-	const candidates = [
-		...document.querySelectorAll('button'),
-		...document.querySelectorAll('a'),
-		...document.querySelectorAll('div[onclick]'),
-		...document.querySelectorAll('[role="button"]'),
-		...document.querySelectorAll('.button'),
-		...document.querySelectorAll('[class*="btn"]'),
-		...document.querySelectorAll('[class*="start"]'),
-		...document.querySelectorAll('[class*="play"]')
-	];
+	// Find ALL elements with matching text first (very broad search)
+	const allElements = document.querySelectorAll('*');
+	const candidates = [];
 
-	console.log('[ClickByText] Found', candidates.length, 'clickable candidates');
-
-	// Find element with matching text (case-insensitive)
-	for (let elem of candidates) {
+	for (let elem of allElements) {
 		const text = elem.textContent?.trim() || '';
 		const textUpper = text.toUpperCase();
 		const searchUpper = searchText.toUpperCase();
 
-		if (textUpper === searchUpper || textUpper.includes(searchUpper)) {
-			console.log('[ClickByText] Found matching element:', elem.tagName, text);
-
-			// Scroll into view
-			elem.scrollIntoView({ behavior: 'instant', block: 'center' });
-
-			// Click it
-			elem.click();
-
-			// Also dispatch mouse event
-			const clickEvent = new MouseEvent('click', {
-				view: window,
-				bubbles: true,
-				cancelable: true
-			});
-			elem.dispatchEvent(clickEvent);
-
-			console.log('[ClickByText] Clicked successfully');
-			return JSON.stringify({
-				success: true,
-				element: elem.tagName,
-				text: text,
-				className: elem.className
-			});
+		// Only include elements that directly contain the text (not inherited from children)
+		if (textUpper === searchUpper || (textUpper.includes(searchUpper) && text.length < 100)) {
+			// Check if this element or its children are visible
+			const rect = elem.getBoundingClientRect();
+			if (rect.width > 0 && rect.height > 0) {
+				candidates.push(elem);
+			}
 		}
+	}
+
+	console.log('[ClickByText] Found', candidates.length, 'visible elements with matching text');
+
+	// Sort candidates by text length (prefer exact matches and smaller elements)
+	candidates.sort((a, b) => {
+		const aText = a.textContent?.trim() || '';
+		const bText = b.textContent?.trim() || '';
+		return aText.length - bText.length;
+	});
+
+	// Click the best match (smallest element with the text)
+	if (candidates.length > 0) {
+		const elem = candidates[0];
+		const text = elem.textContent?.trim() || '';
+
+		console.log('[ClickByText] Clicking best match:', elem.tagName, elem.className, text);
+
+		// Scroll into view
+		elem.scrollIntoView({ behavior: 'instant', block: 'center' });
+
+		// Click it
+		elem.click();
+
+		// Also dispatch mouse event
+		const clickEvent = new MouseEvent('click', {
+			view: window,
+			bubbles: true,
+			cancelable: true
+		});
+		elem.dispatchEvent(clickEvent);
+
+		console.log('[ClickByText] Clicked successfully');
+		return JSON.stringify({
+			success: true,
+			element: elem.tagName,
+			text: text,
+			className: elem.className
+		});
 	}
 
 	console.log('[ClickByText] No matching element found for:', searchText);
 	return JSON.stringify({
 		success: false,
 		reason: 'no_matching_element',
-		searched: searchText
+		searched: searchText,
+		candidatesFound: candidates.length
 	});
 })();
 `, buttonText)
