@@ -21,6 +21,7 @@ func NewBrowserManager(headless bool) (*BrowserManager, error) {
 	// Create allocator context with Chrome
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", headless),
+		chromedp.Flag("ozone-platform", "headless"), // Force headless Ozone platform (prevents X11/dbus init)
 		chromedp.Flag("disable-gpu", headless), // Only disable GPU in headless mode
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),

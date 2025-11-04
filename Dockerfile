@@ -61,8 +61,10 @@ COPY --from=frontend-builder /app/dist /var/www/html
 ENV DB_PATH=/data/dreamup.db
 ENV PORT=8080
 ENV STATIC_DIR=/var/www/html
-ENV CHROME_BIN=/usr/bin/chromium-browser
-ENV CHROME_PATH=/usr/lib/chromium/
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROME_PATH=/usr/bin/
+ENV DISPLAY=
+ENV QT_QPA_PLATFORM=offscreen
 
 EXPOSE 8080
 
