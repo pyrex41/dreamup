@@ -2744,13 +2744,23 @@ viewVirtualScrollControls offset total limit =
         ]
 
 
-{-| Legacy console log view (simple) -}
+{-| Legacy console log view (simple) with Tailwind styling -}
 viewConsoleLog : ConsoleLog -> Html Msg
 viewConsoleLog log =
-    div [ class ("console-log log-" ++ log.level) ]
-        [ span [ class "log-level" ] [ text (String.toUpper log.level) ]
-        , span [ class "log-message" ] [ text log.message ]
-        , span [ class "log-source" ] [ text log.source ]
+    let
+        levelColor =
+            case log.level of
+                "error" -> "text-red-600 bg-red-50 border-red-200"
+                "warning" -> "text-yellow-700 bg-yellow-50 border-yellow-200"
+                "info" -> "text-blue-600 bg-blue-50 border-blue-200"
+                _ -> "text-gray-600 bg-gray-50 border-gray-200"
+    in
+    div [ class ("flex items-start gap-3 p-3 rounded border mb-2 " ++ levelColor) ]
+        [ span [ class "font-bold text-xs uppercase flex-shrink-0" ] [ text log.level ]
+        , div [ class "flex-1 space-y-1" ]
+            [ div [ class "text-sm font-mono break-words" ] [ text log.message ]
+            , div [ class "text-xs opacity-60" ] [ text log.source ]
+            ]
         ]
 
 
