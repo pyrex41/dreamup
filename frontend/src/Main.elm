@@ -8,6 +8,7 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Random
 import Time
 import Url
 import Url.Parser as Parser exposing ((</>), Parser, string)
@@ -316,6 +317,53 @@ init flags url key =
     )
 
 
+-- GAME LIBRARY
+
+
+type alias ExampleGame =
+    { title : String
+    , description : String
+    , url : String
+    , score : String
+    , badgeType : String
+    }
+
+
+gameLibrary : List ExampleGame
+gameLibrary =
+    [ { title = "Pac-Man"
+      , description = "Classic arcade game - eat dots and avoid ghosts"
+      , url = "https://freepacman.org"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    , { title = "2048"
+      , description = "Number puzzle game - combine tiles to reach 2048"
+      , url = "https://play2048.co"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    , { title = "Free Rider 2"
+      , description = "Kongregate - Physics-based bike game"
+      , url = "https://www.kongregate.com/en/games/onemorelevel/free-rider-2"
+      , score = "65/100"
+      , badgeType = "success"
+      }
+    , { title = "Subway Surfers"
+      , description = "Poki - Endless runner game"
+      , url = "https://www.poki.com/en/g/subway-surfers"
+      , score = "40/100"
+      , badgeType = "warning"
+      }
+    , { title = "Agar.io"
+      , description = "Simple multiplayer game"
+      , url = "https://agar.io"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    ]
+
+
 initExpandedSections : ExpandedSections
 initExpandedSections =
     { issues = False
@@ -403,7 +451,7 @@ initBatchTestForm =
     { urls = []
     , urlInput = ""
     , maxDuration = 60
-    , headless = False
+    , headless = True  -- Batch tests are always headless
     , validationError = Nothing
     , submitting = False
     , submitError = Nothing
@@ -479,6 +527,9 @@ type Msg
     | DismissError
     | UpdateBatchUrlInput String
     | AddBatchUrl
+    | AddQuickGameToBatch String
+    | FillRandomBatchUrls
+    | RandomUrlsGenerated (List Int)
     | RemoveBatchUrl Int
     | UpdateBatchMaxDuration String
     | ToggleBatchHeadless
@@ -1081,6 +1132,68 @@ update msg model =
                                 }
                         in
                         ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        AddQuickGameToBatch url ->
+            let
+                form =
+                    model.batchTestForm
+            in
+            if List.length form.urls >= 10 then
+                let
+                    updatedForm =
+                        { form | validationError = Just "Maximum 10 URLs allowed" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else if List.member url form.urls then
+                let
+                    updatedForm =
+                        { form | validationError = Just "URL already added to batch" }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+            else
+                let
+                    updatedForm =
+                        { form
+                            | urls = form.urls ++ [ url ]
+                            , validationError = Nothing
+                        }
+                in
+                ( { model | batchTestForm = updatedForm }, Cmd.none )
+
+        FillRandomBatchUrls ->
+            let
+                availableUrls =
+                    List.map .url gameLibrary
+
+                -- Generate command to select random URLs
+                randomIndicesGenerator =
+                    Random.list 10 (Random.int 0 (List.length availableUrls - 1))
+            in
+            ( model, Random.generate RandomUrlsGenerated randomIndicesGenerator )
+
+        RandomUrlsGenerated indices ->
+            let
+                form =
+                    model.batchTestForm
+
+                availableUrls =
+                    List.map .url gameLibrary
+
+                -- Convert indices to URLs
+                selectedUrls =
+                    indices
+                        |> List.filterMap (\i -> List.head (List.drop i availableUrls))
+                        |> List.take 10
+
+                updatedForm =
+                    { form
+                        | urls = selectedUrls
+                        , validationError = Nothing
+                    }
+            in
+            ( { model | batchTestForm = updatedForm }, Cmd.none )
 
         RemoveBatchUrl index ->
             let
@@ -1734,53 +1847,35 @@ viewTestSubmission model =
             [ h3 [ class "text-xl font-bold text-gray-900 mb-2" ] [ text "Example Games (Click to Test)" ]
             , p [ class "text-sm text-gray-600 mb-6" ] [ text "These games have been tested and work well with our system:" ]
             , div [ class "grid grid-cols-1 md:grid-cols-3 gap-4" ]
-                [ viewExampleGame
-                    "Free Rider 2"
-                    "Kongregate - Physics-based bike game"
-                    "https://www.kongregate.com/en/games/onemorelevel/free-rider-2"
-                    "65/100"
-                    "success"
-                , viewExampleGame
-                    "Subway Surfers"
-                    "Poki - Endless runner game"
-                    "https://www.poki.com/en/g/subway-surfers"
-                    "40/100"
-                    "warning"
-                , viewExampleGame
-                    "Agar.io"
-                    "Simple multiplayer game"
-                    "https://agar.io"
-                    "Testing"
-                    "info"
-                ]
+                (List.map viewExampleGame gameLibrary)
             ]
         ]
 
 
-viewExampleGame : String -> String -> String -> String -> String -> Html Msg
-viewExampleGame title description url score badgeType =
+viewExampleGame : ExampleGame -> Html Msg
+viewExampleGame game =
     let
         badgeColor =
-            case badgeType of
+            case game.badgeType of
                 "success" -> "bg-green-100 text-green-800 border-green-200"
                 "warning" -> "bg-yellow-100 text-yellow-800 border-yellow-200"
                 _ -> "bg-blue-100 text-blue-800 border-blue-200"
     in
     div
         [ class "border border-gray-200 rounded-lg hover:shadow-lg transition-shadow cursor-pointer bg-white overflow-hidden"
-        , onClick (UpdateGameUrl url)
+        , onClick (UpdateGameUrl game.url)
         ]
         [ div [ class "p-4 space-y-3" ]
             [ div [ class "flex items-start justify-between" ]
-                [ h4 [ class "font-semibold text-gray-900 text-lg" ] [ text title ]
-                , span [ class ("px-2 py-1 text-xs font-medium rounded border " ++ badgeColor) ] [ text score ]
+                [ h4 [ class "font-semibold text-gray-900 text-lg" ] [ text game.title ]
+                , span [ class ("px-2 py-1 text-xs font-medium rounded border " ++ badgeColor) ] [ text game.score ]
                 ]
-            , p [ class "text-sm text-gray-600" ] [ text description ]
-            , code [ class "block text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200 truncate" ] [ text url ]
+            , p [ class "text-sm text-gray-600" ] [ text game.description ]
+            , code [ class "block text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border border-gray-200 truncate" ] [ text game.url ]
             , button
                 [ class "w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors"
                 , type_ "button"
-                , onClick (UpdateGameUrl url)
+                , onClick (UpdateGameUrl game.url)
                 ]
                 [ text "Use This URL" ]
             ]
@@ -1828,6 +1923,32 @@ viewBatchTestSubmission model =
                             text ""
                     ]
 
+                -- Quick-add games section
+                , div [ class "space-y-3" ]
+                    [ div [ class "flex items-center justify-between" ]
+                        [ label [ class "block text-sm font-medium text-gray-700" ] [ text "Quick Add Games:" ]
+                        , button
+                            [ onClick FillRandomBatchUrls
+                            , disabled form.submitting
+                            , class "px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            ]
+                            [ text "🎲 Fill Random (10)" ]
+                        ]
+                    , div [ class "grid grid-cols-2 md:grid-cols-5 gap-2" ]
+                        (List.map
+                            (\game ->
+                                button
+                                    [ onClick (AddQuickGameToBatch game.url)
+                                    , disabled (form.submitting || List.length form.urls >= 10)
+                                    , class "px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded-md transition-colors border border-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    , title game.url
+                                    ]
+                                    [ text ("+ " ++ game.title) ]
+                            )
+                            gameLibrary
+                        )
+                    ]
+
                 -- URL list
                 , if List.isEmpty form.urls then
                     div [ class "text-sm text-gray-500 italic p-4 bg-gray-50 rounded-lg border border-gray-200" ]
@@ -1870,19 +1991,7 @@ viewBatchTestSubmission model =
                     , p [ class "text-sm text-gray-500" ] [ text "Maximum time allowed per test (60-300 seconds)" ]
                     ]
 
-                , div [ class "flex items-center" ]
-                    [ label [ class "flex items-center cursor-pointer" ]
-                        [ input
-                            [ type_ "checkbox"
-                            , checked form.headless
-                            , onClick ToggleBatchHeadless
-                            , disabled form.submitting
-                            , class "w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 focus:ring-2 disabled:cursor-not-allowed"
-                            ]
-                            []
-                        , span [ class "ml-2 text-sm font-medium text-gray-700" ] [ text "Run in headless mode (no visible browser)" ]
-                        ]
-                    ]
+                -- Note: Batch tests always run in headless mode for better performance
 
                 , case form.submitError of
                     Just error ->
