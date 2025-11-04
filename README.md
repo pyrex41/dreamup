@@ -6,6 +6,8 @@
 [![Go Version](https://img.shields.io/badge/go-1.24+-blue)]()
 [![License](https://img.shields.io/badge/license-MIT-blue)]()
 
+📚 **Documentation**: [Architecture Guide](ARCHITECTURE.md) | [Deployment Guide](DEPLOYMENT.md)
+
 ## Overview
 
 DreamUp QA Agent is a fully automated testing system for web-based games. It uses browser automation, AI-powered visual analysis, and intelligent reporting to evaluate game quality, identify issues, and provide actionable recommendations.
