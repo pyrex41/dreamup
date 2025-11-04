@@ -24,6 +24,22 @@ func NewBrowserManager(headless bool) (*BrowserManager, error) {
 		chromedp.Flag("disable-gpu", headless), // Only disable GPU in headless mode
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		// Alpine/Docker headless mode fixes
+		chromedp.Flag("disable-software-rasterizer", true),
+		chromedp.Flag("disable-background-networking", true),
+		chromedp.Flag("disable-default-apps", true),
+		chromedp.Flag("disable-extensions", true),
+		chromedp.Flag("disable-sync", true),
+		chromedp.Flag("metrics-recording-only", true),
+		chromedp.Flag("mute-audio", true),
+		chromedp.Flag("no-first-run", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		chromedp.Flag("disable-renderer-backgrounding", true),
+		chromedp.Flag("disable-background-timer-throttling", true),
+		chromedp.Flag("disable-ipc-flooding-protection", true),
+		chromedp.Flag("password-store", "basic"),
+		chromedp.Flag("use-mock-keychain", true),
 		// Block common ad and tracking domains
 		chromedp.Flag("host-rules", "MAP *.doubleclick.net 127.0.0.1, MAP *.googlesyndication.com 127.0.0.1, MAP *.googleadservices.com 127.0.0.1, MAP *.google-analytics.com 127.0.0.1"),
 		// Disable popup blocking to ensure game loads properly
