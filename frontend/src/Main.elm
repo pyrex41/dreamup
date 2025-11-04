@@ -1646,7 +1646,7 @@ viewReportView model reportId =
 
 viewReport : Model -> Report -> Html Msg
 viewReport model report =
-    div [ class "report-container" ]
+    div [ class "max-w-7xl mx-auto px-4 py-8 space-y-8" ]
         [ -- Header and Summary (Subtask 1)
           viewReportHeader report
         , viewReportSummary report
@@ -1691,34 +1691,34 @@ viewReport model report =
 {-| Subtask 1: Report Header and Summary -}
 viewReportHeader : Report -> Html Msg
 viewReportHeader report =
-    div [ class "report-header" ]
-        [ div [ class "header-main" ]
-            [ h2 [] [ text "Test Report" ]
-            , div [ class ("status-badge status-" ++ String.toLower report.summary.status) ]
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4" ]
+        [ div [ class "flex items-center justify-between" ]
+            [ h2 [ class "text-3xl font-bold text-gray-900 dark:text-white" ] [ text "Test Report" ]
+            , div [ class ("px-4 py-2 rounded-full font-semibold text-sm " ++ statusBadgeClass report.summary.status) ]
                 [ text (String.toUpper report.summary.status) ]
             ]
-        , div [ class "header-info" ]
-            [ div [ class "info-item" ]
-                [ span [ class "label" ] [ text "Game URL:" ]
-                , a [ href report.gameUrl, class "game-link" ] [ text report.gameUrl ]
+        , div [ class "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" ]
+            [ div [ class "space-y-1" ]
+                [ span [ class "text-sm text-gray-500 dark:text-gray-400" ] [ text "Game URL:" ]
+                , a [ href report.gameUrl, class "text-blue-600 dark:text-blue-400 hover:underline break-all block" ] [ text report.gameUrl ]
                 ]
-            , div [ class "info-item" ]
-                [ span [ class "label" ] [ text "Report ID:" ]
-                , span [ class "value" ] [ text report.reportId ]
+            , div [ class "space-y-1" ]
+                [ span [ class "text-sm text-gray-500 dark:text-gray-400" ] [ text "Report ID:" ]
+                , span [ class "text-gray-900 dark:text-white font-mono text-sm" ] [ text report.reportId ]
                 ]
-            , div [ class "info-item" ]
-                [ span [ class "label" ] [ text "Timestamp:" ]
-                , span [ class "value" ] [ text report.timestamp ]
+            , div [ class "space-y-1" ]
+                [ span [ class "text-sm text-gray-500 dark:text-gray-400" ] [ text "Timestamp:" ]
+                , span [ class "text-gray-900 dark:text-white" ] [ text report.timestamp ]
                 ]
-            , div [ class "info-item" ]
-                [ span [ class "label" ] [ text "Duration:" ]
-                , span [ class "value" ] [ text (formatDuration report.duration) ]
+            , div [ class "space-y-1" ]
+                [ span [ class "text-sm text-gray-500 dark:text-gray-400" ] [ text "Duration:" ]
+                , span [ class "text-gray-900 dark:text-white" ] [ text (formatDuration report.duration) ]
                 ]
             , case report.score of
                 Just score ->
-                    div [ class "info-item" ]
-                        [ span [ class "label" ] [ text "Overall Score:" ]
-                        , span [ class ("score-value " ++ scoreClass score.overallScore) ]
+                    div [ class "space-y-1" ]
+                        [ span [ class "text-sm text-gray-500 dark:text-gray-400" ] [ text "Overall Score:" ]
+                        , span [ class ("text-2xl font-bold " ++ scoreColorClass score.overallScore) ]
                             [ text (String.fromInt score.overallScore ++ "/100") ]
                         ]
 
@@ -2500,6 +2500,34 @@ scoreClass score =
 
     else
         "score-poor"
+
+
+scoreColorClass : Int -> String
+scoreColorClass score =
+    if score >= 80 then
+        "text-green-600 dark:text-green-400"
+
+    else if score >= 50 then
+        "text-yellow-600 dark:text-yellow-400"
+
+    else
+        "text-red-600 dark:text-red-400"
+
+
+statusBadgeClass : String -> String
+statusBadgeClass status =
+    case String.toLower status of
+        "passed" ->
+            "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+
+        "failed" ->
+            "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+
+        "running" ->
+            "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+
+        _ ->
+            "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
 
 
 formatDuration : Int -> String

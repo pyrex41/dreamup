@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/dreamup/qa-agent/internal/agent"
 	"github.com/dreamup/qa-agent/internal/evaluator"
 	"github.com/dreamup/qa-agent/internal/reporter"
@@ -323,70 +322,53 @@ func (s *Server) executeTest(job *TestJob) {
 		return
 	}
 
-	s.updateJob(job.ID, "running", 40, "Handling cookie consent...")
+	s.updateJob(job.ID, "running", 40, "Loading game page...")
 
 	// Wait for page load
 	time.Sleep(2 * time.Second)
 
-	// Handle cookie consent
+	// DISABLED: Cookie consent handling was clicking game recommendation links
+	// instead of actual consent dialogs on sites like Poki
+	// TODO: Make cookie consent detection more specific if needed
+	// detector := agent.NewUIDetector(bm.GetContext())
+	// if clicked, err := detector.AcceptCookieConsent(); err != nil {
+	//     log.Printf("Cookie consent handling: %v", err)
+	// } else if clicked {
+	//     log.Printf("Cookie consent accepted")
+	//     time.Sleep(500 * time.Millisecond)
+	// }
+
 	detector := agent.NewUIDetector(bm.GetContext())
-	if clicked, err := detector.AcceptCookieConsent(); err != nil {
-		log.Printf("Cookie consent handling: %v", err)
-	} else if clicked {
-		log.Printf("Cookie consent accepted")
-		time.Sleep(500 * time.Millisecond)
-	}
+	log.Printf("Skipping cookie consent to avoid navigation issues")
 
 	s.updateJob(job.ID, "running", 50, "Starting game...")
 
-	// Click start button (try multiple times if needed)
-	startClicked := false
-	for i := 0; i < 3; i++ {
-		if clicked, err := detector.ClickStartButton(); err != nil {
-			log.Printf("Start button click attempt %d: %v", i+1, err)
-		} else if clicked {
-			log.Printf("Game started successfully on attempt %d", i+1)
-			startClicked = true
-			time.Sleep(1 * time.Second) // Give game time to initialize
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	if !startClicked {
-		log.Printf("Warning: Could not find/click start button, trying to interact with canvas...")
-		// Try clicking on canvas as fallback
-		canvasSelector, err := detector.GetGameCanvas()
-		if err == nil {
-			log.Printf("Found game canvas: %s", canvasSelector)
-			chromedp.Run(bm.GetContext(), chromedp.Click(canvasSelector, chromedp.ByQuery))
-			time.Sleep(1 * time.Second)
-		}
-	}
+	// DON'T click anything - just wait for game to load
+	// Clicking can trigger navigation to other games on sites like Poki
+	log.Printf("Skipping canvas click to avoid navigation issues...")
+	time.Sleep(2 * time.Second)
 
 	s.updateJob(job.ID, "running", 55, "Waiting for game to load...")
 
-	// Wait for game to fully load and render (smart detection)
-	log.Printf("Waiting for game canvas to be ready...")
-	gameReady, err := detector.WaitForGameReady(10)
-	if err != nil {
-		log.Printf("Error waiting for game ready: %v", err)
-	} else if !gameReady {
-		log.Printf("Warning: Game canvas did not appear ready within timeout, proceeding anyway")
-	} else {
-		log.Printf("Game canvas is ready!")
-	}
+	// Wait for game to load (simple delay for now)
+	log.Printf("Waiting 5 seconds for game to load...")
+	time.Sleep(5 * time.Second)
 
 	// Focus the game canvas to ensure it receives keyboard events
 	log.Printf("Focusing game canvas...")
 	focused, err := detector.FocusGameCanvas()
 	if err != nil {
 		log.Printf("Error focusing canvas: %v", err)
+		log.Printf("Continuing anyway...")
 	} else if !focused {
 		log.Printf("Warning: Could not focus canvas, keyboard inputs may not work")
+		log.Printf("Continuing anyway...")
 	} else {
 		log.Printf("Canvas focused successfully!")
 	}
+
+	// Add small delay after focus
+	time.Sleep(500 * time.Millisecond)
 
 	s.updateJob(job.ID, "running", 60, "Playing game with keyboard controls...")
 

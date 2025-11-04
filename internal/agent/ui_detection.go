@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -437,33 +438,87 @@ func (d *UIDetector) AcceptCookieConsent() (bool, error) {
 func (d *UIDetector) FocusGameCanvas() (bool, error) {
 	script := `
 (function() {
-	// Find the game canvas
-	const canvas = document.querySelector('canvas');
+	console.log('[FocusGameCanvas] Starting canvas focus...');
+
+	// Try to find canvas in main document first
+	let canvas = document.querySelector('canvas');
+	console.log('[FocusGameCanvas] Canvas in main document:', !!canvas);
+
+	// If not found, check iframes
 	if (!canvas) {
-		return false;
+		const iframes = document.querySelectorAll('iframe');
+		console.log('[FocusGameCanvas] Checking', iframes.length, 'iframes');
+		for (let iframe of iframes) {
+			try {
+				const iframeCanvas = iframe.contentDocument?.querySelector('canvas');
+				if (iframeCanvas) {
+					console.log('[FocusGameCanvas] Found canvas in iframe');
+					canvas = iframeCanvas;
+					break;
+				}
+			} catch (e) {
+				// CORS issue, can't access iframe
+				console.log('[FocusGameCanvas] Cannot access iframe (CORS):', e.message);
+			}
+		}
+	}
+
+	if (!canvas) {
+		console.log('[FocusGameCanvas] No canvas found anywhere');
+		return JSON.stringify({ success: false, reason: 'no_canvas' });
 	}
 
 	// Make canvas focusable by setting tabindex
 	canvas.setAttribute('tabindex', '0');
+	console.log('[FocusGameCanvas] Set tabindex=0');
 
 	// Focus the canvas element
 	canvas.focus();
+	console.log('[FocusGameCanvas] Called focus()');
+
+	// Check if canvas is in an iframe
+	const inIframe = canvas.ownerDocument !== document;
+	console.log('[FocusGameCanvas] Canvas in iframe:', inIframe);
 
 	// Verify focus was successful
-	return document.activeElement === canvas;
+	const activeElement = canvas.ownerDocument.activeElement;
+	const isFocused = activeElement === canvas;
+	console.log('[FocusGameCanvas] Is focused:', isFocused, 'Active element:', activeElement?.tagName);
+
+	return JSON.stringify({
+		success: isFocused,
+		inIframe: inIframe,
+		activeTag: activeElement?.tagName
+	});
 })();
 `
 
-	var focused bool
+	var resultJSON string
 	err := chromedp.Run(d.ctx,
-		chromedp.Evaluate(script, &focused),
+		chromedp.Evaluate(script, &resultJSON),
 	)
 
 	if err != nil {
 		return false, fmt.Errorf("failed to focus game canvas: %w", err)
 	}
 
-	return focused, nil
+	// Parse JSON result
+	var result struct {
+		Success   bool   `json:"success"`
+		Reason    string `json:"reason"`
+		InIframe  bool   `json:"inIframe"`
+		ActiveTag string `json:"activeTag"`
+	}
+	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
+		return false, fmt.Errorf("failed to parse focus result: %w", err)
+	}
+
+	if !result.Success {
+		return false, fmt.Errorf("canvas focus failed: %s (inIframe=%v, activeTag=%s)",
+			result.Reason, result.InIframe, result.ActiveTag)
+	}
+
+	return true, nil
 }
 
 // SendKeyboardEventToCanvas sends a keyboard event directly to the canvas element
@@ -482,46 +537,54 @@ func (d *UIDetector) SendKeyboardEventToCanvas(keyCode string) (bool, error) {
 		canvas.focus();
 	}
 
-	// Key code mapping for special keys
-	const keyMap = {
-		'ArrowUp': 38,
-		'ArrowDown': 40,
-		'ArrowLeft': 37,
-		'ArrowRight': 39,
-		'Space': 32,
-		'Enter': 13,
-		'Escape': 27
+	// Key mappings - must match real browser keyboard events
+	const keyMappings = {
+		'ArrowUp': { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
+		'ArrowDown': { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
+		'ArrowLeft': { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
+		'ArrowRight': { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
+		'Space': { key: ' ', code: 'Space', keyCode: 32 },
+		'Enter': { key: 'Enter', code: 'Enter', keyCode: 13 },
+		'Escape': { key: 'Escape', code: 'Escape', keyCode: 27 }
 	};
 
-	const key = %q;
-	const code = keyMap[key] || key.charCodeAt(0);
+	const inputKey = %q;
+	const mapping = keyMappings[inputKey] || {
+		key: inputKey,
+		code: 'Key' + inputKey.toUpperCase(),
+		keyCode: inputKey.charCodeAt(0)
+	};
 
 	// Create and dispatch keydown event to both canvas and window
 	const keydownEvent = new KeyboardEvent('keydown', {
-		key: key,
-		code: key,
-		keyCode: code,
-		which: code,
+		key: mapping.key,
+		code: mapping.code,
+		keyCode: mapping.keyCode,
+		which: mapping.keyCode,
 		bubbles: true,
-		cancelable: true
+		cancelable: true,
+		composed: true
 	});
 
 	canvas.dispatchEvent(keydownEvent);
 	window.dispatchEvent(keydownEvent);
+	document.dispatchEvent(keydownEvent);
 
 	// Small delay between keydown and keyup
 	setTimeout(function() {
 		const keyupEvent = new KeyboardEvent('keyup', {
-			key: key,
-			code: key,
-			keyCode: code,
-			which: code,
+			key: mapping.key,
+			code: mapping.code,
+			keyCode: mapping.keyCode,
+			which: mapping.keyCode,
 			bubbles: true,
-			cancelable: true
+			cancelable: true,
+			composed: true
 		});
 
 		canvas.dispatchEvent(keyupEvent);
 		window.dispatchEvent(keyupEvent);
+		document.dispatchEvent(keyupEvent);
 	}, 50);
 
 	return true;
