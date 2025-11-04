@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -252,6 +253,38 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// Serve video files
+func (s *Server) handleVideo(w http.ResponseWriter, r *http.Request) {
+	// Extract filename from path: /api/videos/{filename}
+	filename := r.URL.Path[len("/api/videos/"):]
+	if filename == "" {
+		http.Error(w, "Filename required", http.StatusBadRequest)
+		return
+	}
+
+	// Security: prevent directory traversal and only allow video files
+	if strings.Contains(filename, "..") || strings.Contains(filename, "/") || !strings.HasPrefix(filename, "gameplay_") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	// Read video from temp directory
+	tmpDir := os.TempDir()
+	filePath := filepath.Join(tmpDir, filename)
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Failed to read video %s: %v", filePath, err)
+		http.Error(w, "Video not found", http.StatusNotFound)
+		return
+	}
+
+	// Set content type for MP4 video
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
 // List all tests
 func (s *Server) handleTestList(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
@@ -385,12 +418,30 @@ func (s *Server) executeTest(job *TestJob) {
 	// Add small delay after detection
 	time.Sleep(500 * time.Millisecond)
 
+	// Initialize video recorder
+	log.Printf("Initializing video recorder...")
+	videoRecorder := agent.NewVideoRecorder(bm.GetContext())
+
+	// Start video recording
+	log.Printf("Starting video recording...")
+	if err := videoRecorder.StartRecording(); err != nil {
+		log.Printf("Warning: Failed to start video recording: %v", err)
+		log.Printf("Continuing without video recording...")
+	} else {
+		log.Printf("✓ Video recording started")
+	}
+
 	s.updateJob(job.ID, "running", 60, "Playing game with keyboard controls...")
 
 	// Simulate realistic gameplay with varied interactions over time
 	// This gives the AI more meaningful data to evaluate
 	gameplayDuration := 10 * time.Second // Much longer gameplay
 	gameplayStart := time.Now()
+
+	// Track screenshots captured during gameplay
+	var gameplayScreenshots []*agent.Screenshot
+	lastScreenshotTime := time.Now()
+	screenshotInterval := 2 * time.Second // Capture every 2 seconds
 
 	if useCanvasMode {
 		log.Printf("Starting %v of interactive gameplay with canvas keyboard events...", gameplayDuration)
@@ -402,6 +453,22 @@ func (s *Server) executeTest(job *TestJob) {
 	for time.Since(gameplayStart) < gameplayDuration {
 		progress := 60 + int(25*time.Since(gameplayStart).Seconds()/gameplayDuration.Seconds())
 		s.updateJob(job.ID, "running", progress, fmt.Sprintf("Playing game... %.0fs elapsed", time.Since(gameplayStart).Seconds()))
+
+		// Capture screenshot every 2 seconds during gameplay
+		if time.Since(lastScreenshotTime) >= screenshotInterval {
+			screenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextGameplay)
+			if err != nil {
+				log.Printf("Warning: Failed to capture gameplay screenshot: %v", err)
+			} else {
+				if err := screenshot.SaveToTemp(); err != nil {
+					log.Printf("Warning: Failed to save gameplay screenshot: %v", err)
+				} else {
+					gameplayScreenshots = append(gameplayScreenshots, screenshot)
+					log.Printf("✓ Captured gameplay screenshot (%d total)", len(gameplayScreenshots))
+				}
+			}
+			lastScreenshotTime = time.Now()
+		}
 
 		// Send varied key presses (more realistic gameplay)
 		gameplayActions := []string{
@@ -438,6 +505,27 @@ func (s *Server) executeTest(job *TestJob) {
 
 	log.Printf("Gameplay simulation completed after %v", time.Since(gameplayStart))
 
+	// Stop video recording
+	var videoPath string
+	if videoRecorder.IsRecording {
+		log.Printf("Stopping video recording...")
+		if err := videoRecorder.StopRecording(); err != nil {
+			log.Printf("Warning: Failed to stop video recording: %v", err)
+		} else {
+			log.Printf("✓ Video recording stopped")
+			log.Printf("Recorded %d frames over %v", videoRecorder.GetFrameCount(), videoRecorder.GetDuration())
+
+			// Save video to temp file
+			log.Printf("Saving video as MP4...")
+			videoPath, err = videoRecorder.SaveToTemp()
+			if err != nil {
+				log.Printf("Warning: Failed to save video: %v", err)
+			} else {
+				log.Printf("✓ Video saved to: %s", videoPath)
+			}
+		}
+	}
+
 	s.updateJob(job.ID, "running", 70, "Capturing final screenshot...")
 
 	// Wait for game state to settle
@@ -469,7 +557,10 @@ func (s *Server) executeTest(job *TestJob) {
 		return
 	}
 
-	screenshots := []*agent.Screenshot{initialScreenshot, finalScreenshot}
+	// Combine all screenshots: initial, gameplay screenshots, final
+	screenshots := []*agent.Screenshot{initialScreenshot}
+	screenshots = append(screenshots, gameplayScreenshots...)
+	screenshots = append(screenshots, finalScreenshot)
 	score, err := gameEval.EvaluateGame(job.ctx, screenshots, logs)
 	if err != nil {
 		s.updateJob(job.ID, "failed", 100, fmt.Sprintf("Evaluation failed: %v", err))
@@ -483,6 +574,15 @@ func (s *Server) executeTest(job *TestJob) {
 	reportBuilder.SetScreenshots(screenshots)
 	reportBuilder.SetConsoleLogs(logs)
 	reportBuilder.SetScore(score)
+
+	// Set video URL if video was recorded
+	if videoPath != "" {
+		// Extract filename from path
+		videoFilename := filepath.Base(videoPath)
+		videoURL := fmt.Sprintf("/api/videos/%s", videoFilename)
+		reportBuilder.SetVideoURL(videoURL)
+		log.Printf("Video URL set to: %s", videoURL)
+	}
 
 	report, err := reportBuilder.Build()
 	if err != nil {
@@ -546,6 +646,7 @@ func main() {
 	}))
 	mux.HandleFunc("/api/reports/", server.corsMiddleware(server.handleTestReport))
 	mux.HandleFunc("/api/screenshots/", server.corsMiddleware(server.handleScreenshot))
+	mux.HandleFunc("/api/videos/", server.corsMiddleware(server.handleVideo))
 
 	// Create HTTP server
 	srv := &http.Server{

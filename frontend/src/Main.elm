@@ -198,6 +198,7 @@ type alias PlayabilityScore =
 
 type alias Evidence =
     { screenshots : List ScreenshotInfo
+    , videoUrl : Maybe String
     , consoleLogs : List ConsoleLog
     , logSummary : LogSummary
     , detectedElements : Maybe (List ( String, String ))
@@ -1101,8 +1102,9 @@ playabilityScoreDecoder =
 
 evidenceDecoder : Decode.Decoder Evidence
 evidenceDecoder =
-    Decode.map4 Evidence
+    Decode.map5 Evidence
         (Decode.field "screenshots" (Decode.list screenshotInfoDecoder))
+        (Decode.maybe (Decode.field "video_url" Decode.string))
         (Decode.field "console_logs" (Decode.list consoleLogDecoder))
         (Decode.field "log_summary" logSummaryDecoder)
         (Decode.maybe (Decode.field "detected_elements" (Decode.keyValuePairs Decode.string) |> Decode.map Just) |> Decode.map (Maybe.withDefault Nothing))
@@ -1661,12 +1663,8 @@ viewReport model report =
                     [ p [] [ text "No evaluation metrics available." ]
                     ]
 
-        -- Screenshot Viewer (Task 5)
-        , if List.isEmpty report.evidence.screenshots |> not then
-            viewScreenshotViewer model report.evidence.screenshots
-
-          else
-            text ""
+        -- Video and Screenshots
+        , viewMediaSection model report.evidence
 
         -- Collapsible Issues and Recommendations (Subtask 3)
         , case report.score of
@@ -1730,29 +1728,41 @@ viewReportHeader report =
 
 viewReportSummary : Report -> Html Msg
 viewReportSummary report =
-    div [ class "report-summary" ]
-        [ h3 [] [ text "Summary" ]
-        , div [ class "summary-grid" ]
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow p-6" ]
+        [ h3 [ class "text-xl font-bold text-gray-900 dark:text-white mb-4" ] [ text "Summary" ]
+        , div [ class "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" ]
             [ if List.isEmpty report.summary.passedChecks |> not then
-                div [ class "summary-section passed" ]
-                    [ h4 [] [ text ("✓ Passed (" ++ String.fromInt (List.length report.summary.passedChecks) ++ ")") ]
-                    , ul [] (List.map (\check -> li [] [ text check ]) report.summary.passedChecks)
+                div [ class "bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4" ]
+                    [ h4 [ class "text-lg font-semibold text-green-900 dark:text-green-100 mb-2" ]
+                        [ text ("✓ Passed (" ++ String.fromInt (List.length report.summary.passedChecks) ++ ")") ]
+                    , ul [ class "space-y-1" ]
+                        (List.map (\check ->
+                            li [ class "text-sm text-green-800 dark:text-green-200" ] [ text check ]
+                        ) report.summary.passedChecks)
                     ]
 
               else
                 text ""
             , if List.isEmpty report.summary.failedChecks |> not then
-                div [ class "summary-section failed" ]
-                    [ h4 [] [ text ("✗ Failed (" ++ String.fromInt (List.length report.summary.failedChecks) ++ ")") ]
-                    , ul [] (List.map (\check -> li [] [ text check ]) report.summary.failedChecks)
+                div [ class "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4" ]
+                    [ h4 [ class "text-lg font-semibold text-red-900 dark:text-red-100 mb-2" ]
+                        [ text ("✗ Failed (" ++ String.fromInt (List.length report.summary.failedChecks) ++ ")") ]
+                    , ul [ class "space-y-1" ]
+                        (List.map (\check ->
+                            li [ class "text-sm text-red-800 dark:text-red-200" ] [ text check ]
+                        ) report.summary.failedChecks)
                     ]
 
               else
                 text ""
             , if List.isEmpty report.summary.criticalIssues |> not then
-                div [ class "summary-section critical" ]
-                    [ h4 [] [ text ("⚠ Critical Issues (" ++ String.fromInt (List.length report.summary.criticalIssues) ++ ")") ]
-                    , ul [] (List.map (\issue -> li [] [ text issue ]) report.summary.criticalIssues)
+                div [ class "bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4" ]
+                    [ h4 [ class "text-lg font-semibold text-yellow-900 dark:text-yellow-100 mb-2" ]
+                        [ text ("⚠ Critical Issues (" ++ String.fromInt (List.length report.summary.criticalIssues) ++ ")") ]
+                    , ul [ class "space-y-1" ]
+                        (List.map (\issue ->
+                            li [ class "text-sm text-yellow-800 dark:text-yellow-200" ] [ text issue ]
+                        ) report.summary.criticalIssues)
                     ]
 
               else
@@ -1764,16 +1774,16 @@ viewReportSummary report =
 {-| Subtask 2: Metrics Visualization with Progress Bars -}
 viewMetrics : PlayabilityScore -> Html Msg
 viewMetrics score =
-    div [ class "metrics-section" ]
-        [ h3 [] [ text "Evaluation Metrics" ]
-        , div [ class "metrics-grid" ]
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow p-6" ]
+        [ h3 [ class "text-xl font-bold text-gray-900 dark:text-white mb-4" ] [ text "Evaluation Metrics" ]
+        , div [ class "grid grid-cols-1 md:grid-cols-2 gap-4" ]
             [ viewMetricBar "Overall Score" score.overallScore
             , viewMetricBar "Interactivity" score.interactivityScore
             , viewMetricBar "Visual Quality" score.visualQuality
             , viewMetricBar "Error Severity" (100 - score.errorSeverity) -- Invert so higher is better
-            , div [ class "metric-item boolean" ]
-                [ span [ class "metric-label" ] [ text "Loads Correctly" ]
-                , span [ class ("metric-value " ++ if score.loadsCorrectly then "success" else "error") ]
+            , div [ class "col-span-1 md:col-span-2 flex items-center justify-between bg-gray-50 dark:bg-gray-700 rounded-lg p-4" ]
+                [ span [ class "text-sm font-medium text-gray-700 dark:text-gray-300" ] [ text "Loads Correctly" ]
+                , span [ class ("text-lg font-semibold " ++ if score.loadsCorrectly then "text-green-600 dark:text-green-400" else "text-red-600 dark:text-red-400") ]
                     [ text (if score.loadsCorrectly then "✓ Yes" else "✗ No") ]
                 ]
             ]
@@ -1782,15 +1792,18 @@ viewMetrics score =
 
 viewMetricBar : String -> Int -> Html Msg
 viewMetricBar label value =
-    div [ class "metric-item" ]
-        [ div [ class "metric-label-row" ]
-            [ span [ class "metric-label" ] [ text label ]
-            , span [ class ("metric-score " ++ scoreClass value) ]
+    div [ class "space-y-2" ]
+        [ div [ class "flex items-center justify-between" ]
+            [ span [ class "text-sm font-medium text-gray-700 dark:text-gray-300" ] [ text label ]
+            , span [ class ("text-sm font-bold " ++ scoreColorClass value) ]
                 [ text (String.fromInt value ++ "/100") ]
             ]
-        , div [ class "progress-bar-container" ]
+        , div [ class "w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5" ]
             [ div
-                [ class ("progress-bar " ++ scoreClass value)
+                [ class ("h-2.5 rounded-full transition-all duration-300 " ++
+                    if value >= 80 then "bg-green-600 dark:bg-green-500"
+                    else if value >= 60 then "bg-yellow-500 dark:bg-yellow-400"
+                    else "bg-red-600 dark:bg-red-500")
                 , style "width" (String.fromInt value ++ "%")
                 ]
                 []
@@ -1801,17 +1814,17 @@ viewMetricBar label value =
 {-| Subtask 3: Collapsible Issues and Recommendations -}
 viewCollapsibleSection : Bool -> SectionType -> String -> Html Msg -> Html Msg
 viewCollapsibleSection isExpanded sectionType title content =
-    div [ class "collapsible-section" ]
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden" ]
         [ div
-            [ class "section-header"
+            [ class "flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             , onClick (ToggleSection sectionType)
             ]
-            [ h3 [] [ text title ]
-            , span [ class "toggle-icon" ]
+            [ h3 [ class "text-lg font-semibold text-gray-900 dark:text-white" ] [ text title ]
+            , span [ class "text-gray-500 dark:text-gray-400 text-xl" ]
                 [ text (if isExpanded then "▼" else "▶") ]
             ]
         , if isExpanded then
-            div [ class "section-content" ] [ content ]
+            div [ class "px-4 pb-4 border-t border-gray-200 dark:border-gray-700" ] [ content ]
 
           else
             text ""
@@ -1821,27 +1834,37 @@ viewCollapsibleSection isExpanded sectionType title content =
 viewIssues : List String -> Html Msg
 viewIssues issues =
     if List.isEmpty issues then
-        div [ class "empty-state" ] [ text "No issues found!" ]
+        div [ class "text-center py-8 text-gray-500 dark:text-gray-400" ] [ text "No issues found!" ]
 
     else
-        ul [ class "issues-list" ]
-            (List.map (\issue -> li [ class "issue-item" ] [ text ("• " ++ issue) ]) issues)
+        ul [ class "space-y-2 pt-4" ]
+            (List.map (\issue ->
+                li [ class "flex items-start" ]
+                    [ span [ class "text-red-500 dark:text-red-400 mr-2" ] [ text "•" ]
+                    , span [ class "text-gray-700 dark:text-gray-300" ] [ text issue ]
+                    ]
+            ) issues)
 
 
 viewRecommendations : List String -> Html Msg
 viewRecommendations recommendations =
     if List.isEmpty recommendations then
-        div [ class "empty-state" ] [ text "No recommendations at this time." ]
+        div [ class "text-center py-8 text-gray-500 dark:text-gray-400" ] [ text "No recommendations at this time." ]
 
     else
-        ul [ class "recommendations-list" ]
-            (List.map (\rec -> li [ class "recommendation-item" ] [ text ("→ " ++ rec) ]) recommendations)
+        ul [ class "space-y-2 pt-4" ]
+            (List.map (\rec ->
+                li [ class "flex items-start" ]
+                    [ span [ class "text-blue-500 dark:text-blue-400 mr-2" ] [ text "→" ]
+                    , span [ class "text-gray-700 dark:text-gray-300" ] [ text rec ]
+                    ]
+            ) recommendations)
 
 
 viewReasoning : String -> Html Msg
 viewReasoning reasoning =
-    div [ class "reasoning-text" ]
-        [ p [] [ text reasoning ] ]
+    div [ class "pt-4" ]
+        [ p [ class "text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap" ] [ text reasoning ] ]
 
 
 {-| Task 6: Console Log Viewer with Filtering, Search, Virtual Scrolling, and Export -}
@@ -2131,6 +2154,143 @@ viewReportActions report =
                 ]
                 [ text "🔄 Re-run Test" ]
             ]
+        ]
+
+
+{-| Media Section: Video Player + Screenshot Carousel -}
+viewMediaSection : Model -> Evidence -> Html Msg
+viewMediaSection model evidence =
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-6" ]
+        [ h3 [ class "text-xl font-bold text-gray-900 dark:text-white" ] [ text "Gameplay Recording" ]
+
+        -- Video Player
+        , case evidence.videoUrl of
+            Just videoUrl ->
+                div [ class "space-y-4" ]
+                    [ video
+                        [ class "w-full rounded-lg"
+                        , Html.Attributes.attribute "controls" ""
+                        , Html.Attributes.attribute "preload" "metadata"
+                        ]
+                        [ Html.Attributes.attribute "src" videoUrl |> (\_ -> source [ Html.Attributes.attribute "src" videoUrl, Html.Attributes.attribute "type" "video/mp4" ] [])
+                        , text "Your browser does not support the video tag."
+                        ]
+                    ]
+
+            Nothing ->
+                text ""
+
+        -- Screenshots Carousel
+        , if List.isEmpty evidence.screenshots |> not then
+            div [ class "space-y-4" ]
+                [ h4 [ class "text-lg font-semibold text-gray-900 dark:text-white" ]
+                    [ text ("Screenshots (" ++ String.fromInt (List.length evidence.screenshots) ++ ")") ]
+                , viewScreenshotCarousel model evidence.screenshots
+                ]
+
+          else
+            text ""
+        ]
+
+
+viewScreenshotCarousel : Model -> List ScreenshotInfo -> Html Msg
+viewScreenshotCarousel model screenshots =
+    let
+        currentIndex =
+            model.screenshotViewer.currentIndex
+
+        currentScreenshot =
+            List.drop currentIndex screenshots
+                |> List.head
+
+        -- Convert filepath to API URL
+        screenshotUrl : ScreenshotInfo -> String
+        screenshotUrl screenshot =
+            case screenshot.s3Url of
+                Just url ->
+                    url
+                Nothing ->
+                    -- Extract filename from filepath and construct API URL
+                    let
+                        filename =
+                            screenshot.filepath
+                                |> String.split "/"
+                                |> List.reverse
+                                |> List.head
+                                |> Maybe.withDefault "screenshot.png"
+                    in
+                    "/api/screenshots/" ++ filename
+    in
+    div [ class "space-y-4" ]
+        [ -- Main Image Display
+          case currentScreenshot of
+            Just screenshot ->
+                div [ class "relative bg-gray-100 dark:bg-gray-900 rounded-lg overflow-hidden" ]
+                    [ img
+                        [ Html.Attributes.src (screenshotUrl screenshot)
+                        , Html.Attributes.alt ("Screenshot - " ++ screenshot.context)
+                        , class "w-full h-auto"
+                        ]
+                        []
+                    , div [ class "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-4" ]
+                        [ div [ class "flex items-center justify-between text-white" ]
+                            [ div [ class "space-y-1" ]
+                                [ p [ class "text-sm font-medium" ] [ text (String.toUpper screenshot.context) ]
+                                , p [ class "text-xs opacity-90" ] [ text screenshot.timestamp ]
+                                , p [ class "text-xs opacity-75" ]
+                                    [ text (String.fromInt screenshot.width ++ " × " ++ String.fromInt screenshot.height) ]
+                                ]
+                            , div [ class "flex items-center gap-2" ]
+                                [ button
+                                    [ class "p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50"
+                                    , onClick PreviousScreenshot
+                                    , Html.Attributes.disabled (currentIndex == 0)
+                                    ]
+                                    [ text "←" ]
+                                , span [ class "text-sm font-medium" ]
+                                    [ text (String.fromInt (currentIndex + 1) ++ " / " ++ String.fromInt (List.length screenshots)) ]
+                                , button
+                                    [ class "p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors disabled:opacity-50"
+                                    , onClick NextScreenshot
+                                    , Html.Attributes.disabled (currentIndex >= List.length screenshots - 1)
+                                    ]
+                                    [ text "→" ]
+                                ]
+                            ]
+                        ]
+                    ]
+
+            Nothing ->
+                div [ class "text-center py-8 text-gray-500 dark:text-gray-400" ]
+                    [ text "No screenshot selected" ]
+
+        -- Thumbnail Strip
+        , div [ class "flex gap-2 overflow-x-auto pb-2" ]
+            (List.indexedMap
+                (\index screenshot ->
+                    button
+                        [ class
+                            ("flex-shrink-0 relative rounded-lg overflow-hidden border-2 transition-all " ++
+                                if index == currentIndex then
+                                    "border-blue-500 dark:border-blue-400 shadow-lg"
+                                else
+                                    "border-transparent hover:border-gray-300 dark:hover:border-gray-600"
+                            )
+                        , onClick (SelectScreenshot index)
+                        ]
+                        [ img
+                            [ Html.Attributes.src (screenshotUrl screenshot)
+                            , Html.Attributes.alt ("Thumbnail " ++ String.fromInt (index + 1))
+                            , class "w-32 h-auto"
+                            ]
+                            []
+                        , div [ class "absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1" ]
+                            [ p [ class "text-xs text-white truncate" ] [ text screenshot.context ]
+                            ]
+                        ]
+                )
+                screenshots
+            )
         ]
 
 

@@ -36,6 +36,8 @@ type Report struct {
 type Evidence struct {
 	// Screenshots are the captured images
 	Screenshots []ScreenshotInfo `json:"screenshots"`
+	// VideoURL is the URL to the gameplay video (if recorded)
+	VideoURL string `json:"video_url,omitempty"`
 	// ConsoleLogs are the browser console logs
 	ConsoleLogs []agent.ConsoleLog `json:"console_logs"`
 	// LogSummary provides log statistics
@@ -91,6 +93,7 @@ type ReportBuilder struct {
 	gameURL    string
 	startTime  time.Time
 	screenshots []*agent.Screenshot
+	videoURL   string
 	logs       []agent.ConsoleLog
 	score      *evaluator.PlayabilityScore
 	detected   map[string]string
@@ -110,6 +113,11 @@ func NewReportBuilder(gameURL string) *ReportBuilder {
 // SetScreenshots sets the screenshots for the report
 func (rb *ReportBuilder) SetScreenshots(screenshots []*agent.Screenshot) {
 	rb.screenshots = screenshots
+}
+
+// SetVideoURL sets the video URL for the report
+func (rb *ReportBuilder) SetVideoURL(videoURL string) {
+	rb.videoURL = videoURL
 }
 
 // SetConsoleLogs sets the console logs for the report
@@ -172,6 +180,7 @@ func (rb *ReportBuilder) Build() (*Report, error) {
 	// Build evidence
 	evidence := &Evidence{
 		Screenshots:      screenshotInfos,
+		VideoURL:         rb.videoURL,
 		ConsoleLogs:      rb.logs,
 		LogSummary:       logSummary,
 		DetectedElements: rb.detected,
