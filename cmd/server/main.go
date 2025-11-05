@@ -784,11 +784,11 @@ func (s *Server) executeTest(job *TestJob) {
 	for attempt := 1; attempt <= maxAttempts && !gameStarted; attempt++ {
 		log.Printf("Gameplay detection attempt %d/%d...", attempt, maxAttempts)
 
-		// Wait for UI to settle - longer delay to allow animations to complete
-		waitTime := 3 * time.Second
+		// Wait for UI to settle
+		waitTime := 1 * time.Second
 		if repeatedScreenCount > 0 {
-			// If we're seeing the same screen repeatedly, wait even longer
-			waitTime = 5 * time.Second
+			// If we're seeing the same screen repeatedly, wait a bit longer
+			waitTime = 2 * time.Second
 			log.Printf("Seeing repeated screen, waiting %v for animations...", waitTime)
 		}
 		time.Sleep(waitTime)
@@ -842,7 +842,6 @@ func (s *Server) executeTest(job *TestJob) {
 						log.Printf("Warning: Coordinate click failed: %v", err)
 					} else {
 						log.Printf("✓ Clicked at vision-suggested coordinates")
-						time.Sleep(500 * time.Millisecond)
 						continue // Continue to next iteration to check if game started
 					}
 				}
