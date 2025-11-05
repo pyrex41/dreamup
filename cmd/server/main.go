@@ -863,6 +863,15 @@ func (s *Server) executeTest(job *TestJob) {
 					}
 
 					log.Printf("Attempting to click at coordinates: (%d, %d)", clickX, clickY)
+
+				// Save screenshot with visual marker showing where we're clicking
+				markerLabel := fmt.Sprintf("attempt%d", attempt)
+				markerPath, markerErr := agent.SaveScreenshotWithClickMarker(screenshot, clickX, clickY, markerLabel)
+				if markerErr != nil {
+					log.Printf("Warning: Could not save click marker screenshot: %v", markerErr)
+				} else {
+					log.Printf("📍 Saved screenshot with click marker: %s", markerPath)
+				}
 					err := visionDOMDetector.ClickAt(clickX, clickY)
 					if err != nil {
 						log.Printf("Warning: Coordinate click failed: %v", err)

@@ -1,12 +1,19 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"log"
+	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -361,6 +368,66 @@ Examples:
 		ClickY:       result.ClickY,
 		Description:  result.Description,
 	}, nil
+}
+
+// SaveScreenshotWithClickMarker saves a screenshot with a visual marker showing where we clicked
+func SaveScreenshotWithClickMarker(screenshot *Screenshot, x, y int, label string) (string, error) {
+	// Decode PNG image
+	img, err := png.Decode(bytes.NewReader(screenshot.Data))
+	if err != nil {
+		return "", fmt.Errorf("failed to decode screenshot: %w", err)
+	}
+
+	// Create a new RGBA image we can draw on
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+
+	// Draw a red circle at the click point
+	red := color.RGBA{255, 0, 0, 255}
+	radius := 20
+
+	// Draw circle outline
+	for angle := 0; angle < 360; angle++ {
+		rad := float64(angle) * math.Pi / 180
+		for r := radius - 3; r <= radius; r++ {
+			dx := int(float64(r) * math.Cos(rad))
+			dy := int(float64(r) * math.Sin(rad))
+			px := x + dx
+			py := y + dy
+			if px >= 0 && px < bounds.Max.X && py >= 0 && py < bounds.Max.Y {
+				rgba.Set(px, py, red)
+			}
+		}
+	}
+
+	// Draw crosshair
+	for i := -25; i <= 25; i++ {
+		// Horizontal line
+		if x+i >= 0 && x+i < bounds.Max.X {
+			rgba.Set(x+i, y, red)
+		}
+		// Vertical line
+		if y+i >= 0 && y+i < bounds.Max.Y {
+			rgba.Set(x, y+i, red)
+		}
+	}
+
+	// Save to temp file
+	filename := fmt.Sprintf("click_marker_%s_%d_%d.png", label, x, y)
+	filepath := filepath.Join(os.TempDir(), filename)
+
+	f, err := os.Create(filepath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create marker file: %w", err)
+	}
+	defer f.Close()
+
+	if err := png.Encode(f, rgba); err != nil {
+		return "", fmt.Errorf("failed to encode marker image: %w", err)
+	}
+
+	return filepath, nil
 }
 
 // ClickAt clicks at specific pixel coordinates using native CDP mouse events
