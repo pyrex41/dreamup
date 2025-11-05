@@ -255,10 +255,24 @@ func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot) (*Gamepl
 	imageBase64 := base64.StdEncoding.EncodeToString(screenshot.Data)
 
 	// Create vision request asking if game is playing or if action needed
-	prompt := `Analyze this game screenshot and determine:
+	prompt := `Analyze this game screenshot carefully and determine:
+
 1. Is the game actively playing (gameplay visible, not a menu/splash screen)?
 2. If not playing, is there a button or element that needs to be clicked to start/continue?
-3. If a button needs to be clicked, estimate its CENTER coordinates in pixels from the top-left corner.
+3. If a button needs to be clicked, locate its EXACT CENTER coordinates.
+
+CRITICAL INSTRUCTIONS FOR COORDINATES:
+- The image is 1280x720 pixels (width x height)
+- Measure from TOP-LEFT corner (0, 0)
+- Find the VISUAL CENTER of the clickable button/element
+- Measure button boundaries carefully: find top, bottom, left, right edges
+- Calculate center as: X = (left + right) / 2, Y = (top + bottom) / 2
+- For buttons in LOWER THIRD of screen (below game title), Y should be > 500
+- For horizontally centered buttons, X should be near 640
+- Be precise - clicking 50+ pixels off will fail
+
+SPECIAL NOTE: Many game menu buttons appear BELOW the game title/logo.
+If you see a button in the lower portion of the menu, estimate Y > 550.
 
 Respond in JSON format:
 {
@@ -271,10 +285,12 @@ Respond in JSON format:
 }
 
 Examples:
-- If showing "PLAY" button at center: {"game_started": false, "action_needed": true, "button_text": "PLAY", "click_x": 640, "click_y": 400, "description": "Main menu with PLAY button"}
-- If showing level "1" button: {"game_started": false, "action_needed": true, "button_text": "1", "click_x": 200, "click_y": 300, "description": "Level selection screen"}
-- If showing active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Game is actively playing"}
-- If loading screen: {"game_started": false, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Loading screen"}`
+- Angry Birds PLAY button (large orange button below red bird and title): {"game_started": false, "action_needed": true, "button_text": "PLAY", "click_x": 640, "click_y": 590, "description": "Angry Birds main menu with PLAY button"}
+- PLAY button in lower-center: {"game_started": false, "action_needed": true, "button_text": "PLAY", "click_x": 640, "click_y": 580, "description": "Main menu with PLAY button below title"}
+- START button very low: {"game_started": false, "action_needed": true, "button_text": "START", "click_x": 640, "click_y": 620, "description": "Main menu with START button at bottom"}
+- Level "1" button on left: {"game_started": false, "action_needed": true, "button_text": "1", "click_x": 200, "click_y": 300, "description": "Level selection screen"}
+- Active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Game is actively playing"}
+- Loading screen: {"game_started": false, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Loading screen"}`
 
 	// ===== DETAILED LOGGING =====
 	log.Printf("[Vision Request] ========================================")
@@ -282,7 +298,7 @@ Examples:
 	log.Printf("[Vision Request] %s", prompt)
 	log.Printf("[Vision Request] Screenshot metadata: %dx%d, %d bytes", screenshot.Width, screenshot.Height, len(screenshot.Data))
 	log.Printf("[Vision Request] Base64 image size: %d chars", len(imageBase64))
-	log.Printf("[Vision Request] Model: %s", openai.GPT4oMini)
+	log.Printf("[Vision Request] Model: %s", openai.GPT4o)
 	log.Printf("[Vision Request] ========================================")
 
 	// Create context with 15 second timeout (vision API with large images can be slow)
@@ -292,7 +308,7 @@ Examples:
 	resp, err := v.client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
-			Model: openai.GPT4oMini,
+			Model: openai.GPT4o, // Using full GPT-4o for better spatial reasoning
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role: openai.ChatMessageRoleUser,
