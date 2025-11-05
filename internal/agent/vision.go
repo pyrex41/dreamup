@@ -142,9 +142,11 @@ IMPORTANT:
 		return nil, fmt.Errorf("no start button detected with sufficient confidence")
 	}
 
-	// Validate coordinates are within bounds
-	if result.X < 0 || result.X > screenshot.Width || result.Y < 0 || result.Y > screenshot.Height {
-		return nil, fmt.Errorf("detected coordinates out of bounds: (%d, %d)", result.X, result.Y)
+	// Validate coordinates are within bounds (must be strictly less than width/height)
+	// 1280x720 means valid coords are 0-1279 for X and 0-719 for Y
+	if result.X < 0 || result.X >= screenshot.Width || result.Y < 0 || result.Y >= screenshot.Height {
+		return nil, fmt.Errorf("detected coordinates out of bounds: (%d, %d) for viewport %dx%d",
+			result.X, result.Y, screenshot.Width, screenshot.Height)
 	}
 
 	return &ClickTarget{
@@ -160,35 +162,133 @@ func (v *VisionDetector) ClickAt(x, y int) error {
 	// JavaScript to click at specific coordinates
 	script := fmt.Sprintf(`
 (function() {
-    console.log('[VisionClick] Clicking at coordinates:', %d, %d);
+    console.log('[VisionClick] Screenshot coordinates:', %d, %d);
+    console.log('[VisionClick] Viewport size:', window.innerWidth, 'x', window.innerHeight);
+
+    // CRITICAL: The screenshot was taken with viewport set to 1280x720
+    // We need to check if current viewport matches and calculate scale if needed
+    const screenshotWidth = 1280;
+    const screenshotHeight = 720;
+    const currentWidth = window.innerWidth;
+    const currentHeight = window.innerHeight;
+
+    // Calculate viewport scale factor
+    const scaleX = currentWidth / screenshotWidth;
+    const scaleY = currentHeight / screenshotHeight;
+
+    // Transform coordinates from screenshot space to current viewport space
+    const viewportX = Math.round(%d * scaleX);
+    const viewportY = Math.round(%d * scaleY);
+
+    console.log('[VisionClick] Scale factors:', scaleX, 'x', scaleY);
+    console.log('[VisionClick] Transformed viewport coordinates:', viewportX, viewportY);
 
     // Get element at coordinates
-    const element = document.elementFromPoint(%d, %d);
+    const element = document.elementFromPoint(viewportX, viewportY);
     console.log('[VisionClick] Element at point:', element?.tagName, element?.className, element?.id);
 
     if (!element) {
         return JSON.stringify({ success: false, reason: 'no_element_at_coordinates' });
     }
 
-    // Dispatch click events
+    // Dispatch multiple event types for better compatibility
+    // Some games (especially HTML5 canvas games) require touch events
+
+    // 1. Mouse events (using transformed viewport coordinates)
+    const mouseDown = new MouseEvent('mousedown', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: viewportX,
+        clientY: viewportY
+    });
+
+    const mouseUp = new MouseEvent('mouseup', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: viewportX,
+        clientY: viewportY
+    });
+
     const clickEvent = new MouseEvent('click', {
         view: window,
         bubbles: true,
         cancelable: true,
-        clientX: %d,
-        clientY: %d
+        clientX: viewportX,
+        clientY: viewportY
     });
 
+    // 2. Touch events for mobile/canvas games
+    const touch = new Touch({
+        identifier: Date.now(),
+        target: element,
+        clientX: viewportX,
+        clientY: viewportY,
+        radiusX: 2.5,
+        radiusY: 2.5,
+        rotationAngle: 0,
+        force: 1
+    });
+
+    const touchStart = new TouchEvent('touchstart', {
+        cancelable: true,
+        bubbles: true,
+        touches: [touch],
+        targetTouches: [touch],
+        changedTouches: [touch]
+    });
+
+    const touchEnd = new TouchEvent('touchend', {
+        cancelable: true,
+        bubbles: true,
+        touches: [],
+        targetTouches: [],
+        changedTouches: [touch]
+    });
+
+    // 3. Pointer events (modern standard)
+    const pointerDown = new PointerEvent('pointerdown', {
+        bubbles: true,
+        cancelable: true,
+        clientX: viewportX,
+        clientY: viewportY,
+        pointerId: 1,
+        pointerType: 'mouse'
+    });
+
+    const pointerUp = new PointerEvent('pointerup', {
+        bubbles: true,
+        cancelable: true,
+        clientX: viewportX,
+        clientY: viewportY,
+        pointerId: 1,
+        pointerType: 'mouse'
+    });
+
+    // Dispatch all event types in proper order
+    element.dispatchEvent(pointerDown);
+    element.dispatchEvent(mouseDown);
+    element.dispatchEvent(touchStart);
+
+    // Native click
     element.click();
+
+    element.dispatchEvent(touchEnd);
+    element.dispatchEvent(mouseUp);
+    element.dispatchEvent(pointerUp);
     element.dispatchEvent(clickEvent);
 
-    console.log('[VisionClick] Click dispatched');
+    console.log('[VisionClick] All click events dispatched (mouse, touch, pointer)');
 
     return JSON.stringify({
         success: true,
         element: element.tagName,
         className: element.className,
-        id: element.id
+        id: element.id,
+        screenshotCoords: { x: %d, y: %d },
+        viewportCoords: { x: viewportX, y: viewportY },
+        scaleFactor: { x: scaleX, y: scaleY }
     });
 })();
 `, x, y, x, y, x, y)

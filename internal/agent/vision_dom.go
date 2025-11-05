@@ -340,143 +340,64 @@ Examples:
 	}, nil
 }
 
-// ClickAt clicks at specific pixel coordinates using chromedp
+// ClickAt clicks at specific pixel coordinates using native CDP mouse events
 func (v *VisionDOMDetector) ClickAt(x, y int) error {
-	// JavaScript to click at specific coordinates with full event sequence
+	// Use chromedp's native MouseClickXY for real browser input events
+	// This sends actual Input.dispatchMouseEvent through Chrome DevTools Protocol,
+	// which games properly respond to (unlike JavaScript dispatchEvent)
+	log.Printf("[VisionClick] Screenshot coordinates: (%d, %d)", x, y)
+
+	// CRITICAL: Transform coordinates from screenshot space to actual viewport space
+	// The screenshot was taken at 1280x720, but the actual viewport might be different
 	script := fmt.Sprintf(`
 (function() {
-    console.log('[VisionClick] Clicking at coordinates:', %d, %d);
+	const screenshotWidth = 1280;
+	const screenshotHeight = 720;
+	const currentWidth = window.innerWidth;
+	const currentHeight = window.innerHeight;
 
-    // Get element at coordinates
-    const element = document.elementFromPoint(%d, %d);
-    console.log('[VisionClick] Element at point:', element?.tagName, element?.className, element?.id);
+	const scaleX = currentWidth / screenshotWidth;
+	const scaleY = currentHeight / screenshotHeight;
 
-    if (!element) {
-        return JSON.stringify({ success: false, reason: 'no_element_at_coordinates' });
-    }
+	const viewportX = Math.round(%d * scaleX);
+	const viewportY = Math.round(%d * scaleY);
 
-    // If clicking on a canvas, dispatch full mouse event sequence
-    if (element.tagName === 'CANVAS') {
-        const canvas = element;
-        const rect = canvas.getBoundingClientRect();
+	console.log('[VisionClick] Screenshot:', %d, %d, 'Viewport:', currentWidth, 'x', currentHeight);
+	console.log('[VisionClick] Scale:', scaleX, 'x', scaleY, 'Transformed:', viewportX, viewportY);
 
-        console.log('[VisionClick] Canvas detected');
-        console.log('[VisionClick] Canvas position:', {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height
-        });
-        console.log('[VisionClick] Canvas internal size:', {
-            width: canvas.width,
-            height: canvas.height
-        });
-
-        // Dispatch mousedown event (many games use this instead of click)
-        const mousedownEvent = new MouseEvent('mousedown', {
-            view: window,
-            bubbles: true,
-            cancelable: true,
-            clientX: %d,
-            clientY: %d,
-            button: 0  // Left mouse button
-        });
-
-        const mouseupEvent = new MouseEvent('mouseup', {
-            view: window,
-            bubbles: true,
-            cancelable: true,
-            clientX: %d,
-            clientY: %d,
-            button: 0
-        });
-
-        const clickEvent = new MouseEvent('click', {
-            view: window,
-            bubbles: true,
-            cancelable: true,
-            clientX: %d,
-            clientY: %d
-        });
-
-        // Dispatch all three events in order (simulates real mouse interaction)
-        canvas.dispatchEvent(mousedownEvent);
-        canvas.dispatchEvent(mouseupEvent);
-        canvas.dispatchEvent(clickEvent);
-
-        // Also try pointer events (some games use Pointer Events API)
-        const pointerdownEvent = new PointerEvent('pointerdown', {
-            view: window,
-            bubbles: true,
-            cancelable: true,
-            clientX: %d,
-            clientY: %d,
-            button: 0,
-            pointerType: 'mouse'
-        });
-
-        const pointerupEvent = new PointerEvent('pointerup', {
-            view: window,
-            bubbles: true,
-            cancelable: true,
-            clientX: %d,
-            clientY: %d,
-            button: 0,
-            pointerType: 'mouse'
-        });
-
-        canvas.dispatchEvent(pointerdownEvent);
-        canvas.dispatchEvent(pointerupEvent);
-
-        console.log('[VisionClick] Dispatched mouse and pointer events to canvas');
-
-        return JSON.stringify({
-            success: true,
-            element: 'CANVAS',
-            canvasId: canvas.id,
-            canvasSize: { width: canvas.width, height: canvas.height },
-            cssSize: { width: rect.width, height: rect.height },
-            clickPosition: { x: %d, y: %d }
-        });
-    }
-
-    // For non-canvas elements, use simple click
-    element.click();
-    element.dispatchEvent(new MouseEvent('click', {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        clientX: %d,
-        clientY: %d
-    }));
-
-    console.log('[VisionClick] Clicked element');
-
-    return JSON.stringify({
-        success: true,
-        element: element.tagName,
-        className: element.className,
-        id: element.id
-    });
+	return JSON.stringify({ x: viewportX, y: viewportY, scaleX: scaleX, scaleY: scaleY });
 })();
-`, x, y, x, y, x, y, x, y, x, y, x, y, x, y, x, y, x, y)
+`, x, y, x, y)
 
 	var resultJSON string
 	err := chromedp.Run(v.ctx, chromedp.Evaluate(script, &resultJSON))
 	if err != nil {
-		return fmt.Errorf("failed to execute click: %w", err)
+		return fmt.Errorf("failed to calculate transformed coordinates: %w", err)
 	}
 
-	// Parse result as generic map to handle both canvas and non-canvas responses
-	var result map[string]interface{}
+	var result struct {
+		X      int     `json:"x"`
+		Y      int     `json:"y"`
+		ScaleX float64 `json:"scaleX"`
+		ScaleY float64 `json:"scaleY"`
+	}
 	if err := json.Unmarshal([]byte(resultJSON), &result); err != nil {
-		return fmt.Errorf("failed to parse click result: %w", err)
+		return fmt.Errorf("failed to parse coordinate transformation: %w", err)
 	}
 
-	if success, ok := result["success"].(bool); !ok || !success {
-		return fmt.Errorf("click failed: %v", result)
+	log.Printf("[VisionClick] Transformed coordinates: (%d, %d) with scale (%.2f, %.2f)",
+		result.X, result.Y, result.ScaleX, result.ScaleY)
+
+	// Now click at the TRANSFORMED coordinates
+	err = chromedp.Run(v.ctx,
+		chromedp.MouseClickXY(float64(result.X), float64(result.Y)),
+	)
+
+	if err != nil {
+		return fmt.Errorf("CDP mouse click failed: %w", err)
 	}
 
+	log.Printf("[VisionClick] ✓ Successfully clicked using native CDP mouse event")
 	return nil
 }
 

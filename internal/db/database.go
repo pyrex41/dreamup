@@ -219,6 +219,7 @@ func (d *Database) ListTests(status string, limit, offset int) ([]TestRecord, er
 	var tests []TestRecord
 	for rows.Next() {
 		var test TestRecord
+		var reportID sql.NullString
 		var reportData sql.NullString
 		var completedAt sql.NullTime
 
@@ -228,7 +229,7 @@ func (d *Database) ListTests(status string, limit, offset int) ([]TestRecord, er
 			&test.Status,
 			&test.Score,
 			&test.Duration,
-			&test.ReportID,
+			&reportID,
 			&reportData,
 			&test.CreatedAt,
 			&completedAt,
@@ -237,6 +238,9 @@ func (d *Database) ListTests(status string, limit, offset int) ([]TestRecord, er
 			return nil, err
 		}
 
+		if reportID.Valid {
+			test.ReportID = reportID.String
+		}
 		if reportData.Valid {
 			test.ReportData = reportData.String
 		}

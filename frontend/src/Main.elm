@@ -613,6 +613,9 @@ update msg model =
                         ReportView reportId ->
                             fetchReport model.apiBaseUrl reportId
 
+                        TestHistory ->
+                            fetchTestHistory model.apiBaseUrl model.testHistory
+
                         _ ->
                             Cmd.none
             in

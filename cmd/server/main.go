@@ -836,8 +836,22 @@ func (s *Server) executeTest(job *TestJob) {
 
 				// Try coordinate-based click first (works for canvas-rendered buttons)
 				if action.ClickX > 0 && action.ClickY > 0 {
-					log.Printf("Attempting to click at coordinates: (%d, %d)", action.ClickX, action.ClickY)
-					err := visionDOMDetector.ClickAt(action.ClickX, action.ClickY)
+					// If we've seen the same screen multiple times, try small coordinate variations
+					clickX := action.ClickX
+					clickY := action.ClickY
+
+					if repeatedScreenCount > 2 {
+						// Add random variation of ±10 pixels to try hitting the button from different angles
+						variation := 10
+						offsetX := (repeatedScreenCount % 3) - 1 // -1, 0, or 1
+						offsetY := ((repeatedScreenCount / 3) % 3) - 1
+						clickX += offsetX * variation
+						clickY += offsetY * variation
+						log.Printf("Trying coordinate variation: (%d, %d) -> (%d, %d)", action.ClickX, action.ClickY, clickX, clickY)
+					}
+
+					log.Printf("Attempting to click at coordinates: (%d, %d)", clickX, clickY)
+					err := visionDOMDetector.ClickAt(clickX, clickY)
 					if err != nil {
 						log.Printf("Warning: Coordinate click failed: %v", err)
 					} else {
