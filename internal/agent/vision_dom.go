@@ -18,6 +18,9 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -247,50 +250,65 @@ type GameplayAction struct {
 	Description  string // Description of what needs to happen
 	ClickX       int    // X coordinate to click (for canvas-rendered buttons)
 	ClickY       int    // Y coordinate to click (for canvas-rendered buttons)
+	GridCell     string // Grid cell reference (e.g., "J7") for vision-based clicking
 }
 
 // DetectGameplayState analyzes screenshot to determine if game has started or if action is needed
 func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot) (*GameplayAction, error) {
-	// Encode screenshot to base64
-	imageBase64 := base64.StdEncoding.EncodeToString(screenshot.Data)
+	// Apply grid overlay to screenshot for more reliable coordinate detection
+	// Using 20 columns (A-T) and 12 rows (1-12) = 64x60 pixel cells for 1280x720
+	gridCols := 20
+	gridRows := 12
+	griddedScreenshot, err := AddGridOverlay(screenshot, gridCols, gridRows)
+	if err != nil {
+		log.Printf("[Vision Grid] Warning: Failed to add grid overlay, using original: %v", err)
+		griddedScreenshot = screenshot
+	} else {
+		log.Printf("[Vision Grid] Grid overlay applied: %d columns x %d rows", gridCols, gridRows)
+	}
+
+	// Encode screenshot with grid to base64
+	imageBase64 := base64.StdEncoding.EncodeToString(griddedScreenshot.Data)
 
 	// Create vision request asking if game is playing or if action needed
-	prompt := `Analyze this game screenshot carefully and determine:
+	// UPDATED: Now using grid-based coordinate system
+	prompt := fmt.Sprintf(`Analyze this game screenshot carefully and determine:
 
 1. Is the game actively playing (gameplay visible, not a menu/splash screen)?
 2. If not playing, is there a button or element that needs to be clicked to start/continue?
-3. If a button needs to be clicked, locate its EXACT CENTER coordinates.
+3. If a button needs to be clicked, identify which GRID CELL it's in.
 
-CRITICAL INSTRUCTIONS FOR COORDINATES:
-- The image is 1280x720 pixels (width x height)
-- Measure from TOP-LEFT corner (0, 0)
-- Find the VISUAL CENTER of the clickable button/element
-- Measure button boundaries carefully: find top, bottom, left, right edges
-- Calculate center as: X = (left + right) / 2, Y = (top + bottom) / 2
-- For buttons in LOWER THIRD of screen (below game title), Y should be > 500
-- For horizontally centered buttons, X should be near 640
-- Be precise - clicking 50+ pixels off will fail
+GRID SYSTEM INSTRUCTIONS:
+- The image has a %dx%d grid overlay (columns A-%s, rows 1-%d)
+- Each grid cell is labeled with column letter + row number (e.g., "J7", "D3")
+- Columns run left to right: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T
+- Rows run top to bottom: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+- Find the grid cell containing the CENTER of the clickable button
+- Simply identify the cell letter+number where the button center is located
 
-SPECIAL NOTE: Many game menu buttons appear BELOW the game title/logo.
-If you see a button in the lower portion of the menu, estimate Y > 550.
+IMPORTANT TIPS:
+- Menu buttons typically appear in the LOWER half (rows 7-12)
+- Horizontally centered buttons are usually in columns I, J, or K (middle columns)
+- Small buttons may fit entirely within one cell
+- Large buttons span multiple cells - identify the cell at their CENTER
 
 Respond in JSON format:
 {
   "game_started": true/false,
   "action_needed": true/false,
   "button_text": "exact text on button to click" (if action_needed is true),
-  "click_x": pixel x coordinate of button center (if action_needed is true),
-  "click_y": pixel y coordinate of button center (if action_needed is true),
+  "grid_cell": "column+row like J7 or D3" (if action_needed is true),
   "description": "brief description of what you see"
 }
 
 Examples:
-- Angry Birds PLAY button (large orange button below red bird and title): {"game_started": false, "action_needed": true, "button_text": "PLAY", "click_x": 640, "click_y": 590, "description": "Angry Birds main menu with PLAY button"}
-- PLAY button in lower-center: {"game_started": false, "action_needed": true, "button_text": "PLAY", "click_x": 640, "click_y": 580, "description": "Main menu with PLAY button below title"}
-- START button very low: {"game_started": false, "action_needed": true, "button_text": "START", "click_x": 640, "click_y": 620, "description": "Main menu with START button at bottom"}
-- Level "1" button on left: {"game_started": false, "action_needed": true, "button_text": "1", "click_x": 200, "click_y": 300, "description": "Level selection screen"}
-- Active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Game is actively playing"}
-- Loading screen: {"game_started": false, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Loading screen"}`
+- Angry Birds PLAY button (center-bottom): {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J10", "description": "Angry Birds main menu with PLAY button"}
+- PLAY button in lower-center: {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J9", "description": "Main menu with PLAY button below title"}
+- START button very low: {"game_started": false, "action_needed": true, "button_text": "START", "grid_cell": "J11", "description": "Main menu with START button at bottom"}
+- Level "1" button on left: {"game_started": false, "action_needed": true, "button_text": "1", "grid_cell": "D4", "description": "Level selection screen"}
+- Active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Game is actively playing"}
+- Loading screen: {"game_started": false, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Loading screen"}`,
+		gridCols, gridRows, string(rune('A'+gridCols-1)), gridRows)
 
 	// ===== DETAILED LOGGING =====
 	log.Printf("[Vision Request] ========================================")
@@ -353,8 +371,7 @@ Examples:
 		GameStarted  bool   `json:"game_started"`
 		ActionNeeded bool   `json:"action_needed"`
 		ButtonText   string `json:"button_text"`
-		ClickX       int    `json:"click_x"`
-		ClickY       int    `json:"click_y"`
+		GridCell     string `json:"grid_cell"` // Grid-based coordinate (e.g., "J7")
 		Description  string `json:"description"`
 	}
 
@@ -372,16 +389,33 @@ Examples:
 		return nil, fmt.Errorf("failed to parse vision response: %w (response: %s)", err, responseText)
 	}
 
+	// Convert grid cell to pixel coordinates
+	var clickX, clickY int
+	if result.ActionNeeded && result.GridCell != "" {
+		// Parse grid cell (e.g., "J7" -> column="J", row=7)
+		gridCell, parseErr := parseGridCell(result.GridCell)
+		if parseErr != nil {
+			log.Printf("[Vision Grid] Warning: Failed to parse grid cell '%s': %v", result.GridCell, parseErr)
+			// Fall back to center of screen
+			clickX = screenshot.Width / 2
+			clickY = screenshot.Height / 2
+		} else {
+			clickX, clickY = gridCell.ToPixelCoordinates(gridCols, gridRows, screenshot.Width, screenshot.Height)
+			log.Printf("[Vision Grid] Converted grid cell %s to pixel coordinates (%d, %d)", result.GridCell, clickX, clickY)
+		}
+	}
+
 	// Log the parsed results
-	log.Printf("[Vision Parsed] GameStarted: %v, ActionNeeded: %v, ButtonText: '%s', Coords: (%d, %d), Description: '%s'",
-		result.GameStarted, result.ActionNeeded, result.ButtonText, result.ClickX, result.ClickY, result.Description)
+	log.Printf("[Vision Parsed] GameStarted: %v, ActionNeeded: %v, ButtonText: '%s', GridCell: '%s', Coords: (%d, %d), Description: '%s'",
+		result.GameStarted, result.ActionNeeded, result.ButtonText, result.GridCell, clickX, clickY, result.Description)
 
 	return &GameplayAction{
 		GameStarted:  result.GameStarted,
 		ActionNeeded: result.ActionNeeded,
 		ButtonText:   result.ButtonText,
-		ClickX:       result.ClickX,
-		ClickY:       result.ClickY,
+		ClickX:       clickX,
+		ClickY:       clickY,
+		GridCell:     result.GridCell,
 		Description:  result.Description,
 	}, nil
 }
@@ -444,6 +478,175 @@ func SaveScreenshotWithClickMarker(screenshot *Screenshot, x, y int, label strin
 	}
 
 	return filepath, nil
+}
+
+// GridCell represents a cell in the coordinate grid system
+type GridCell struct {
+	Column string // A, B, C, etc.
+	Row    int    // 1, 2, 3, etc.
+}
+
+// String returns the grid cell in "A1" format
+func (g GridCell) String() string {
+	return fmt.Sprintf("%s%d", g.Column, g.Row)
+}
+
+// ToPixelCoordinates converts a grid cell to pixel coordinates (returns center of cell)
+func (g GridCell) ToPixelCoordinates(gridCols, gridRows, imageWidth, imageHeight int) (int, int) {
+	// Convert column letter to index (A=0, B=1, etc.)
+	colIndex := int(g.Column[0] - 'A')
+	rowIndex := g.Row - 1 // Row numbers are 1-based
+
+	// Calculate cell size
+	cellWidth := float64(imageWidth) / float64(gridCols)
+	cellHeight := float64(imageHeight) / float64(gridRows)
+
+	// Calculate center of cell
+	x := int(float64(colIndex)*cellWidth + cellWidth/2)
+	y := int(float64(rowIndex)*cellHeight + cellHeight/2)
+
+	return x, y
+}
+
+// parseGridCell parses a grid cell string like "J7" into a GridCell struct
+func parseGridCell(cellStr string) (GridCell, error) {
+	cellStr = strings.ToUpper(strings.TrimSpace(cellStr))
+	if len(cellStr) < 2 {
+		return GridCell{}, fmt.Errorf("invalid grid cell format: %s", cellStr)
+	}
+
+	// Extract column letter(s) - could be A-Z or AA, AB, etc.
+	colEnd := 0
+	for i, ch := range cellStr {
+		if ch < 'A' || ch > 'Z' {
+			colEnd = i
+			break
+		}
+	}
+	if colEnd == 0 {
+		return GridCell{}, fmt.Errorf("no row number found in grid cell: %s", cellStr)
+	}
+
+	column := cellStr[:colEnd]
+	rowStr := cellStr[colEnd:]
+
+	// Parse row number
+	row, err := fmt.Sscanf(rowStr, "%d", new(int))
+	if err != nil || row == 0 {
+		return GridCell{}, fmt.Errorf("invalid row number in grid cell: %s", cellStr)
+	}
+
+	var rowNum int
+	fmt.Sscanf(rowStr, "%d", &rowNum)
+
+	return GridCell{
+		Column: column,
+		Row:    rowNum,
+	}, nil
+}
+
+// AddGridOverlay adds a labeled grid overlay to a screenshot
+// gridCols and gridRows define the grid dimensions (e.g., 20x12 for 20 columns, 12 rows)
+func AddGridOverlay(screenshot *Screenshot, gridCols, gridRows int) (*Screenshot, error) {
+	// Decode PNG image
+	img, err := png.Decode(bytes.NewReader(screenshot.Data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode screenshot: %w", err)
+	}
+
+	// Create a new RGBA image we can draw on
+	bounds := img.Bounds()
+	rgba := image.NewRGBA(bounds)
+	draw.Draw(rgba, bounds, img, bounds.Min, draw.Src)
+
+	// Grid color (semi-transparent yellow)
+	gridColor := color.RGBA{255, 255, 0, 128}
+	textColor := color.RGBA{255, 255, 0, 255}
+
+	width := bounds.Max.X
+	height := bounds.Max.Y
+
+	cellWidth := float64(width) / float64(gridCols)
+	cellHeight := float64(height) / float64(gridRows)
+
+	// Draw vertical lines and column labels
+	for col := 0; col <= gridCols; col++ {
+		x := int(float64(col) * cellWidth)
+
+		// Draw vertical line
+		for y := 0; y < height; y++ {
+			if x >= 0 && x < width {
+				rgba.Set(x, y, gridColor)
+			}
+		}
+
+		// Add column label (A, B, C, etc.) at top and bottom
+		if col < gridCols {
+			label := string(rune('A' + col))
+			labelX := int(float64(col)*cellWidth + cellWidth/2)
+
+			// Draw label at top
+			drawString(rgba, labelX-3, 12, label, textColor)
+			// Draw label at bottom
+			drawString(rgba, labelX-3, height-5, label, textColor)
+		}
+	}
+
+	// Draw horizontal lines and row labels
+	for row := 0; row <= gridRows; row++ {
+		y := int(float64(row) * cellHeight)
+
+		// Draw horizontal line
+		for x := 0; x < width; x++ {
+			if y >= 0 && y < height {
+				rgba.Set(x, y, gridColor)
+			}
+		}
+
+		// Add row label (1, 2, 3, etc.) on left and right
+		if row < gridRows {
+			label := fmt.Sprintf("%d", row+1)
+			labelY := int(float64(row)*cellHeight + cellHeight/2)
+
+			// Draw label on left
+			drawString(rgba, 5, labelY+4, label, textColor)
+			// Draw label on right
+			drawString(rgba, width-15, labelY+4, label, textColor)
+		}
+	}
+
+	// Encode the modified image back to PNG
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, rgba); err != nil {
+		return nil, fmt.Errorf("failed to encode gridded image: %w", err)
+	}
+
+	// Create a new screenshot with the gridded image
+	griddedScreenshot := &Screenshot{
+		Context:   screenshot.Context,
+		Timestamp: screenshot.Timestamp,
+		Data:      buf.Bytes(),
+		Width:     screenshot.Width,
+		Height:    screenshot.Height,
+	}
+
+	return griddedScreenshot, nil
+}
+
+// drawString draws a string on an RGBA image at the given position
+func drawString(img *image.RGBA, x, y int, label string, col color.Color) {
+	point := fixed.Point26_6{
+		X: fixed.Int26_6(x * 64),
+		Y: fixed.Int26_6(y * 64),
+	}
+
+	d := &font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(col),
+		Face: basicfont.Face7x13,
+		Dot:  point,
+	}
+	d.DrawString(label)
 }
 
 // ClickAt clicks at specific pixel coordinates using native CDP mouse events
