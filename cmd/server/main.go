@@ -774,9 +774,107 @@ func (s *Server) executeTest(job *TestJob) {
 
 	s.updateJob(job.ID, "running", 55, "Waiting for game to load...")
 
-	// Wait for game to load (simple delay for now)
-	log.Printf("Waiting 5 seconds for game to load...")
-	time.Sleep(5 * time.Second)
+	// Vision-based gameplay detection loop
+	// Keep checking if game has started, if not, use vision to suggest next action
+	maxAttempts := 10
+	gameStarted := false
+	var lastDescription string
+	repeatedScreenCount := 0
+
+	for attempt := 1; attempt <= maxAttempts && !gameStarted; attempt++ {
+		log.Printf("Gameplay detection attempt %d/%d...", attempt, maxAttempts)
+
+		// Wait for UI to settle - longer delay to allow animations to complete
+		waitTime := 3 * time.Second
+		if repeatedScreenCount > 0 {
+			// If we're seeing the same screen repeatedly, wait even longer
+			waitTime = 5 * time.Second
+			log.Printf("Seeing repeated screen, waiting %v for animations...", waitTime)
+		}
+		time.Sleep(waitTime)
+
+		// Take screenshot for vision analysis
+		screenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextInitial)
+		if err != nil {
+			log.Printf("Warning: Could not capture screenshot for gameplay detection: %v", err)
+			break
+		}
+
+		// Use vision to check if gameplay has started and suggest action
+		if visionDOMDetector != nil {
+			// Ask vision AI: "Is the game actively playing, or do we need to click something?"
+			action, err := visionDOMDetector.DetectGameplayState(screenshot)
+			if err != nil {
+				log.Printf("Warning: Vision gameplay detection failed: %v", err)
+				// Continue anyway - might be playing
+				gameStarted = true
+				break
+			}
+
+			if action.GameStarted {
+				log.Printf("✓ Vision confirmed game is playing!")
+				gameStarted = true
+				break
+			} else if action.ActionNeeded {
+				log.Printf("Vision detected action needed: %s", action.Description)
+
+				// Track repeated screens to detect stuck states
+				if action.Description == lastDescription {
+					repeatedScreenCount++
+					log.Printf("⚠ Same screen detected %d times in a row", repeatedScreenCount)
+				} else {
+					repeatedScreenCount = 0
+					lastDescription = action.Description
+				}
+
+				// Inspect canvas coordinates on first attempt for debugging
+				if attempt == 1 {
+					if err := visionDOMDetector.InspectCanvasCoordinates(); err != nil {
+						log.Printf("Canvas inspection failed: %v", err)
+					}
+				}
+
+				// Try coordinate-based click first (works for canvas-rendered buttons)
+				if action.ClickX > 0 && action.ClickY > 0 {
+					log.Printf("Attempting to click at coordinates: (%d, %d)", action.ClickX, action.ClickY)
+					err := visionDOMDetector.ClickAt(action.ClickX, action.ClickY)
+					if err != nil {
+						log.Printf("Warning: Coordinate click failed: %v", err)
+					} else {
+						log.Printf("✓ Clicked at vision-suggested coordinates")
+						time.Sleep(500 * time.Millisecond)
+						continue // Continue to next iteration to check if game started
+					}
+				}
+
+				// Fallback to DOM text-based click (works for HTML buttons)
+				if action.ButtonText != "" {
+					log.Printf("Attempting DOM click for button text: %s", action.ButtonText)
+					err := visionDOMDetector.ClickButtonByText(action.ButtonText)
+					if err != nil {
+						log.Printf("Warning: Could not click suggested button: %v", err)
+						// Try clicking the canvas as final fallback
+						log.Printf("Fallback: clicking canvas center...")
+						if focused, focusErr := detector.FocusGameCanvas(); focusErr == nil && focused {
+							time.Sleep(500 * time.Millisecond)
+						}
+					} else {
+						log.Printf("✓ Clicked suggested button: %s", action.ButtonText)
+					}
+				}
+			} else {
+				log.Printf("Vision suggests waiting for game to initialize...")
+			}
+		} else {
+			// No vision available, assume game started after first attempt
+			gameStarted = true
+			break
+		}
+	}
+
+	if !gameStarted {
+		log.Printf("Could not confirm game started after %d attempts, proceeding anyway...", maxAttempts)
+	}
 
 	// Detect if game uses canvas or DOM rendering
 	log.Printf("Detecting game rendering type...")

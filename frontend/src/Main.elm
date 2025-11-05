@@ -8,7 +8,9 @@ import Html.Events exposing (onClick, onInput, onSubmit, onCheck)
 import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
+import Process
 import Random
+import Task
 import Time
 import Url
 import Url.Parser as Parser exposing ((</>), Parser, string)
@@ -49,9 +51,10 @@ type alias Model =
     , testHistory : TestHistoryState
     , networkStatus : NetworkStatus
     , retryState : RetryState
-    , batchTestForm : BatchTestForm
-    , batchTestStatus : Maybe BatchTestStatus
-    }
+     , batchTestForm : BatchTestForm
+     , batchTestStatus : Maybe BatchTestStatus
+     , actionStates : ActionStates
+     }
 
 
 type alias ServerConfig =
@@ -198,11 +201,18 @@ type alias BatchTestStatus =
 
 
 type alias TestStatus =
-    { testId : String
-    , status : String
-    , progress : Int
-    , message : String
-    }
+     { testId : String
+     , status : String
+     , progress : Int
+     , message : String
+     }
+
+
+type alias ActionStates =
+     { isCopying : Bool
+     , isDownloading : Bool
+     , isRerunning : Bool
+     }
 
 
 type alias Report =
@@ -328,9 +338,10 @@ init flags url key =
       , testHistory = initTestHistory
       , networkStatus = initNetworkStatus
       , retryState = initRetryState
-      , batchTestForm = initBatchTestForm
-      , batchTestStatus = Nothing
-      }
+       , batchTestForm = initBatchTestForm
+       , batchTestStatus = Nothing
+       , actionStates = initActionStates
+       }
     , cmd
     )
 
@@ -349,7 +360,13 @@ type alias ExampleGame =
 
 gameLibrary : List ExampleGame
 gameLibrary =
-    [ { title = "Pac-Man"
+    [ { title = "Angry Birds"
+      , description = "Physics-based puzzle game - launch birds to destroy structures"
+      , url = "https://funhtml5games.com/angrybirds/index.html"
+      , score = "Testing"
+      , badgeType = "info"
+      }
+    , { title = "Pac-Man"
       , description = "Classic arcade game - eat dots and avoid ghosts"
       , url = "https://funhtml5games.com/pacman/index.html"
       , score = "Testing"
@@ -366,11 +383,19 @@ gameLibrary =
 
 initExpandedSections : ExpandedSections
 initExpandedSections =
-    { issues = False
-    , recommendations = False
-    , reasoning = False
-    , consoleLogs = False
-    }
+     { issues = False
+     , recommendations = False
+     , reasoning = False
+     , consoleLogs = False
+     }
+
+
+initActionStates : ActionStates
+initActionStates =
+     { isCopying = False
+     , isDownloading = False
+     , isRerunning = False
+     }
 
 
 initScreenshotViewer : ScreenshotViewerState
@@ -536,15 +561,23 @@ type Msg
     | ToggleBatchHeadless Bool
     | SubmitBatchTest
     | BatchTestSubmitted (Result Http.Error BatchTestSubmitResponse)
-    | PollBatchStatus String
-    | BatchStatusUpdated (Result Http.Error BatchTestStatus)
+     | PollBatchStatus String
+     | BatchStatusUpdated (Result Http.Error BatchTestStatus)
+     | StartAction ActionType
+     | CompleteAction ActionType
 
 
 type SectionType
-    = IssuesSection
-    | RecommendationsSection
-    | ReasoningSection
-    | ConsoleLogsSection
+     = IssuesSection
+     | RecommendationsSection
+     | ReasoningSection
+     | ConsoleLogsSection
+
+
+type ActionType
+     = CopyAction
+     | DownloadAction
+     | RerunAction
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -763,11 +796,23 @@ update msg model =
 
         CopyReportLink reportId ->
             -- In a real app, this would use the Clipboard API via ports
-            ( model, Cmd.none )
+            let
+                actionStates = model.actionStates
+                updatedActionStates = { actionStates | isCopying = True }
+            in
+            ( { model | actionStates = updatedActionStates }
+            , Task.perform (\_ -> CompleteAction CopyAction) (Process.sleep 1000)
+            )
 
         DownloadReportJson report ->
             -- In a real app, this would trigger a download via ports
-            ( model, Cmd.none )
+            let
+                actionStates = model.actionStates
+                updatedActionStates = { actionStates | isDownloading = True }
+            in
+            ( { model | actionStates = updatedActionStates }
+            , Task.perform (\_ -> CompleteAction DownloadAction) (Process.sleep 1000)
+            )
 
         RerunTest gameUrl ->
             let
@@ -1320,6 +1365,38 @@ update msg model =
 
         BatchStatusUpdated (Err error) ->
             ( model, Cmd.none )
+
+        StartAction actionType ->
+            let
+                actionStates = model.actionStates
+                updatedActionStates =
+                    case actionType of
+                        CopyAction ->
+                            { actionStates | isCopying = True }
+
+                        DownloadAction ->
+                            { actionStates | isDownloading = True }
+
+                        RerunAction ->
+                            { actionStates | isRerunning = True }
+            in
+            ( { model | actionStates = updatedActionStates }, Cmd.none )
+
+        CompleteAction actionType ->
+            let
+                actionStates = model.actionStates
+                updatedActionStates =
+                    case actionType of
+                        CopyAction ->
+                            { actionStates | isCopying = False }
+
+                        DownloadAction ->
+                            { actionStates | isDownloading = False }
+
+                        RerunAction ->
+                            { actionStates | isRerunning = False }
+            in
+            ( { model | actionStates = updatedActionStates }, Cmd.none )
 
 
 -- DECODER HELPERS
@@ -2385,8 +2462,8 @@ viewReport model report =
         -- Console Logs (part of subtask 3)
         , viewCollapsibleSection model.expandedSections.consoleLogs ConsoleLogsSection ("Console Logs (" ++ String.fromInt report.evidence.logSummary.total ++ ")") (viewConsoleLogs report.evidence)
 
-        -- Report Actions (Subtask 4)
-        , viewReportActions report
+         -- Report Actions (Subtask 4)
+         , viewReportActions model report
         ]
 
 
@@ -2847,28 +2924,69 @@ truncateMessage message maxLength =
 
 
 {-| Subtask 4: Report Actions -}
-viewReportActions : Report -> Html Msg
-viewReportActions report =
-    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow p-6 mt-6" ]
-        [ h3 [ class "text-xl font-bold text-gray-900 dark:text-white mb-4" ] [ text "Actions" ]
-        , div [ class "flex flex-wrap gap-3" ]
-            [ button
-                [ class "flex-1 min-w-[160px] px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-                , onClick (CopyReportLink report.reportId)
-                ]
-                [ text "📋 Copy Share Link" ]
-            , button
-                [ class "flex-1 min-w-[160px] px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-                , onClick (DownloadReportJson report)
-                ]
-                [ text "💾 Download JSON" ]
-            , button
-                [ class "flex-1 min-w-[160px] px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
-                , onClick (RerunTest report.gameUrl)
-                ]
-                [ text "🔄 Re-run Test" ]
-            ]
-        ]
+viewReportActions : Model -> Report -> Html Msg
+viewReportActions model report =
+     div [ class "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-8" ]
+         [ div [ class "flex items-center gap-2 mb-6" ]
+             [ div [ class "w-2 h-2 bg-blue-600 rounded-full" ] []
+             , h3 [ class "text-xl font-semibold text-gray-900 dark:text-white" ] [ text "Report Actions" ]
+             ]
+         , div [ class "grid grid-cols-1 md:grid-cols-3 gap-4" ]
+             [ -- Primary Action: Re-run Test (most important)
+               button
+                   [ class "col-span-1 md:col-span-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                   , onClick (RerunTest report.gameUrl)
+                   , Html.Attributes.disabled (model.reportLoading || model.actionStates.isRerunning)
+                   ]
+                   [ if model.actionStates.isRerunning then
+                       span [ class "flex items-center gap-2" ]
+                           [ span [ class "animate-spin rounded-full h-4 w-4 border-b-2 border-white" ] []
+                           , text "Re-running..."
+                           ]
+                     else
+                       span [ class "flex items-center gap-2" ]
+                           [ span [ class "text-lg" ] [ text "🔄" ]
+                           , text "Re-run Test"
+                           ]
+                   ]
+
+             , -- Secondary Action: Copy Link
+               button
+                   [ class "col-span-1 md:col-span-1 px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                   , onClick (CopyReportLink report.reportId)
+                   , Html.Attributes.disabled (model.reportLoading || model.actionStates.isCopying)
+                   ]
+                   [ if model.actionStates.isCopying then
+                       span [ class "flex items-center gap-2" ]
+                           [ span [ class "animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700 dark:border-gray-300" ] []
+                           , text "Copying..."
+                           ]
+                     else
+                       span [ class "flex items-center gap-2" ]
+                           [ span [ class "text-lg" ] [ text "📋" ]
+                           , text "Copy Link"
+                           ]
+                   ]
+
+             , -- Secondary Action: Download JSON
+               button
+                   [ class "col-span-1 md:col-span-1 px-4 py-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                   , onClick (DownloadReportJson report)
+                   , Html.Attributes.disabled (model.reportLoading || model.actionStates.isDownloading)
+                   ]
+                   [ if model.actionStates.isDownloading then
+                       span [ class "flex items-center gap-2" ]
+                           [ span [ class "animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700 dark:border-gray-300" ] []
+                           , text "Downloading..."
+                           ]
+                     else
+                       span [ class "flex items-center gap-2" ]
+                           [ span [ class "text-lg" ] [ text "💾" ]
+                           , text "Download JSON"
+                           ]
+                   ]
+             ]
+         ]
 
 
 {-| Media Section: Video Player + Screenshot Carousel -}
@@ -3795,8 +3913,8 @@ viewNotFound =
 
 viewFooter : Html Msg
 viewFooter =
-    footer [ class "bg-slate-900 text-gray-400 mt-auto" ]
-        [ div [ class "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6" ]
-            [ p [ class "text-center text-sm" ] [ text "© 2025 DreamUp QA Agent - Automated QA Testing System" ]
+    footer [ class "bg-gray-900 text-gray-300 border-t border-gray-200" ]
+        [ div [ class "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8" ]
+            [ p [ class "text-center text-xs md:text-sm" ] [ text "© 2025 DreamUp QA Agent - Automated QA Testing System" ]
             ]
         ]
