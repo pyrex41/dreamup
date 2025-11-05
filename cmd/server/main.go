@@ -734,9 +734,10 @@ func (s *Server) executeTest(job *TestJob) {
 	// Use vision + DOM to detect and click start button
 	log.Printf("Using GPT-4o vision + DOM to detect and click start button...")
 	visionDOMDetector, err := agent.NewVisionDOMDetector(bm.GetContext())
+	startButtonClicked := false
 	if err != nil {
 		log.Printf("Warning: Could not create vision DOM detector: %v", err)
-		log.Printf("Skipping start button click...")
+		log.Printf("Falling back to DOM-only start button detection...")
 	} else {
 		// Take screenshot for vision analysis
 		visionScreenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextInitial)
@@ -747,11 +748,27 @@ func (s *Server) executeTest(job *TestJob) {
 			err := visionDOMDetector.DetectAndClickStartButton(visionScreenshot)
 			if err != nil {
 				log.Printf("Warning: Vision+DOM start button click failed: %v", err)
-				log.Printf("Game may require manual start or will auto-start")
+				log.Printf("Falling back to DOM-only start button detection...")
 			} else {
 				log.Printf("✓ Vision+DOM successfully clicked start button")
+				startButtonClicked = true
 				time.Sleep(1 * time.Second) // Wait for click to register
 			}
+		}
+	}
+
+	// Fallback: Try simple DOM-based start button detection
+	if !startButtonClicked {
+		log.Printf("Trying DOM-based start button detection...")
+		clicked, err := detector.ClickStartButton()
+		if err != nil {
+			log.Printf("Warning: DOM start button detection failed: %v", err)
+			log.Printf("Game may require manual start or will auto-start")
+		} else if clicked {
+			log.Printf("✓ DOM successfully clicked start button")
+			time.Sleep(1 * time.Second) // Wait for click to register
+		} else {
+			log.Printf("No start button found - game may auto-start")
 		}
 	}
 
