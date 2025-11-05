@@ -648,7 +648,10 @@ update msg model =
             in
             case result of
                 Ok response ->
-                    ( { model | testForm = initTestForm }
+                    ( { model
+                        | testForm = initTestForm
+                        , testStatus = Nothing  -- Clear old test status
+                      }
                     , Nav.pushUrl model.key ("/test/" ++ response.testId)
                     )
 
@@ -1270,7 +1273,10 @@ update msg model =
                 updatedForm =
                     { form | submitting = False }
             in
-            ( { model | batchTestForm = updatedForm }
+            ( { model
+                | batchTestForm = updatedForm
+                , batchTestStatus = Nothing  -- Clear old batch status
+              }
             , Nav.pushUrl model.key ("/batch/" ++ response.batchId)
             )
 
