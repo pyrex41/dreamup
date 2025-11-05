@@ -271,18 +271,31 @@ func (d *UIDetector) ClickStartButton() (bool, error) {
 	// Use JavaScript to find and click start/play buttons
 	script := `
 (function() {
+	console.log('[StartButton] Starting detection...');
+
 	// Try finding buttons by text content
-	const buttons = document.querySelectorAll('button, a[role="button"], div[role="button"], a, span[role="button"], input[type="button"], input[type="submit"]');
+	const buttons = document.querySelectorAll('button, a[role="button"], div[role="button"], a, span[role="button"], input[type="button"], input[type="submit"], div, span, img, area');
+	console.log('[StartButton] Found', buttons.length, 'potential button elements');
+
 	for (const btn of buttons) {
 		const text = btn.textContent.toLowerCase().trim();
 		const value = (btn.value || '').toLowerCase().trim();
+		const alt = (btn.alt || '').toLowerCase().trim();
+		const title = (btn.title || '').toLowerCase().trim();
+		const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
+
 		// Match common start/play button text
 		if (text === 'play' || text === 'start' || text === 'begin' ||
 		    text === 'play game' || text === 'start game' ||
 		    text.includes('play now') || text.includes('start now') ||
-		    value === 'play' || value === 'start') {
-			// Check if button is visible
-			if (btn.offsetParent !== null) {
+		    value === 'play' || value === 'start' ||
+		    alt === 'play' || alt === 'start' ||
+		    title === 'play' || title === 'start' ||
+		    ariaLabel === 'play' || ariaLabel === 'start') {
+			// Check if element is visible
+			const rect = btn.getBoundingClientRect();
+			if (rect.width > 0 && rect.height > 0 && btn.offsetParent !== null) {
+				console.log('[StartButton] Clicking button with text:', text || alt || title || ariaLabel);
 				btn.click();
 				return true;
 			}
@@ -292,10 +305,12 @@ func (d *UIDetector) ClickStartButton() (bool, error) {
 	// Try clicking canvas (many games start on canvas click)
 	const canvas = document.querySelector('canvas');
 	if (canvas && canvas.offsetParent !== null) {
+		console.log('[StartButton] No button found, clicking canvas');
 		canvas.click();
 		return true;
 	}
 
+	console.log('[StartButton] No start button or canvas found');
 	return false;
 })();
 `
