@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -86,6 +88,13 @@ func (s *Screenshot) SaveToTemp() error {
 	// Update screenshot filepath
 	s.Filepath = filepath
 	return nil
+}
+
+// Hash computes a SHA256 hash of the screenshot data for change detection
+// Returns a hex-encoded string of the hash
+func (s *Screenshot) Hash() string {
+	hash := sha256.Sum256(s.Data)
+	return hex.EncodeToString(hash[:])
 }
 
 // LogLevel represents the severity level of a console log

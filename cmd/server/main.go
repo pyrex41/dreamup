@@ -779,6 +779,7 @@ func (s *Server) executeTest(job *TestJob) {
 	maxAttempts := 10
 	gameStarted := false
 	var lastDescription string
+	var lastScreenshotHash string
 	repeatedScreenCount := 0
 
 	for attempt := 1; attempt <= maxAttempts && !gameStarted; attempt++ {
@@ -800,8 +801,19 @@ func (s *Server) executeTest(job *TestJob) {
 			break
 		}
 
+		// Compute screenshot hash to detect if screen has changed
+		currentHash := screenshot.Hash()
+
 		// Use vision to check if gameplay has started and suggest action
 		if visionDOMDetector != nil {
+			// Skip vision API if screenshot hash matches previous (screen hasn't changed)
+			if currentHash == lastScreenshotHash && lastScreenshotHash != "" {
+				log.Printf("⚡ Screenshot unchanged (hash match), skipping vision API call")
+				repeatedScreenCount++
+				continue
+			}
+			lastScreenshotHash = currentHash
+
 			// Ask vision AI: "Is the game actively playing, or do we need to click something?"
 			action, err := visionDOMDetector.DetectGameplayState(screenshot)
 			if err != nil {
