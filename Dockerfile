@@ -35,6 +35,7 @@ RUN pnpm install --frozen-lockfile
 
 # Copy source files (excluding node_modules due to .dockerignore)
 COPY frontend/src ./src/
+COPY frontend/public ./public/
 COPY frontend/index.html frontend/vite.config.js frontend/elm.json ./
 
 # Build the frontend
