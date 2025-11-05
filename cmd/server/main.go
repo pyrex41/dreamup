@@ -981,7 +981,7 @@ func (s *Server) executeTest(job *TestJob) {
 		job.ID,
 		"completed",
 		score.OverallScore,
-		int(report.SessionDuration),
+		int(report.Duration.Seconds()),
 		report.ReportID,
 		report,
 	); err != nil {
