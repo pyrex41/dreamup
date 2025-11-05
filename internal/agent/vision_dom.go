@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/chromedp/chromedp"
 	openai "github.com/sashabaranov/go-openai"
@@ -268,8 +269,12 @@ Examples:
 - If showing active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Game is actively playing"}
 - If loading screen: {"game_started": false, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Loading screen"}`
 
+	// Create context with 3 second timeout for faster failure
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
 	resp, err := v.client.CreateChatCompletion(
-		context.Background(),
+		ctx,
 		openai.ChatCompletionRequest{
 			Model: openai.GPT4oMini,
 			Messages: []openai.ChatCompletionMessage{

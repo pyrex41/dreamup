@@ -724,7 +724,7 @@ func (s *Server) executeTest(job *TestJob) {
 		log.Printf("Warning: Ad blocking/cookie consent failed: %v", err)
 	} else {
 		log.Printf("Ad blocking and cookie consent handling completed")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	detector := agent.NewUIDetector(bm.GetContext())
@@ -752,7 +752,7 @@ func (s *Server) executeTest(job *TestJob) {
 			} else {
 				log.Printf("✓ Vision+DOM successfully clicked start button")
 				startButtonClicked = true
-				time.Sleep(1 * time.Second) // Wait for click to register
+				time.Sleep(300 * time.Millisecond) // Wait for click to register
 			}
 		}
 	}
@@ -766,7 +766,7 @@ func (s *Server) executeTest(job *TestJob) {
 			log.Printf("Game may require manual start or will auto-start")
 		} else if clicked {
 			log.Printf("✓ DOM successfully clicked start button")
-			time.Sleep(1 * time.Second) // Wait for click to register
+			time.Sleep(300 * time.Millisecond) // Wait for click to register
 		} else {
 			log.Printf("No start button found - game may auto-start")
 		}
@@ -784,11 +784,11 @@ func (s *Server) executeTest(job *TestJob) {
 	for attempt := 1; attempt <= maxAttempts && !gameStarted; attempt++ {
 		log.Printf("Gameplay detection attempt %d/%d...", attempt, maxAttempts)
 
-		// Wait for UI to settle
-		waitTime := 1 * time.Second
+		// Wait for UI to settle (reduced for faster detection)
+		waitTime := 300 * time.Millisecond
 		if repeatedScreenCount > 0 {
 			// If we're seeing the same screen repeatedly, wait a bit longer
-			waitTime = 2 * time.Second
+			waitTime = 500 * time.Millisecond
 			log.Printf("Seeing repeated screen, waiting %v for animations...", waitTime)
 		}
 		time.Sleep(waitTime)
@@ -869,7 +869,7 @@ func (s *Server) executeTest(job *TestJob) {
 						// Try clicking the canvas as final fallback
 						log.Printf("Fallback: clicking canvas center...")
 						if focused, focusErr := detector.FocusGameCanvas(); focusErr == nil && focused {
-							time.Sleep(500 * time.Millisecond)
+							time.Sleep(200 * time.Millisecond)
 						}
 					} else {
 						log.Printf("✓ Clicked suggested button: %s", action.ButtonText)
@@ -902,7 +902,7 @@ func (s *Server) executeTest(job *TestJob) {
 	}
 
 	// Add small delay after detection
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// Initialize video recorder
 	log.Printf("Initializing video recorder...")
@@ -986,7 +986,7 @@ func (s *Server) executeTest(job *TestJob) {
 		}
 
 		// Brief pause between action sequences
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	log.Printf("Gameplay simulation completed after %v", time.Since(gameplayStart))
@@ -1015,7 +1015,7 @@ func (s *Server) executeTest(job *TestJob) {
 	s.updateJob(job.ID, "running", 70, "Capturing final screenshot...")
 
 	// Wait for game state to settle
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// Capture final screenshot
 	finalScreenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextFinal)

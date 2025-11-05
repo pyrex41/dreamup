@@ -697,7 +697,7 @@ func (d *UIDetector) WaitForGameReady(timeoutSeconds int) (bool, error) {
 	return new Promise(function(resolve) {
 		const timeout = %d * 1000; // Convert to milliseconds
 		const startTime = Date.now();
-		const pollInterval = 500; // Check every 500ms
+		const pollInterval = 100; // Check every 100ms for faster detection
 
 		function checkCanvas() {
 			const canvas = document.querySelector('canvas');
