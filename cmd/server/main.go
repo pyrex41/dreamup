@@ -149,6 +149,15 @@ func (s *Server) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// Config endpoint - returns server configuration
+func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	forceHeadless := os.Getenv("FORCE_HEADLESS") == "true"
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"forceHeadless": forceHeadless,
+	})
+}
+
 // Health check endpoint
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1009,6 +1018,7 @@ func main() {
 	// Setup routes
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.corsMiddleware(server.handleHealth))
+	mux.HandleFunc("/api/config", server.corsMiddleware(server.handleConfig))
 	mux.HandleFunc("/api/tests", server.corsMiddleware(server.handleTestSubmit))
 	mux.HandleFunc("/api/tests/", server.corsMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {

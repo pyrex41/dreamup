@@ -54,6 +54,11 @@ type alias Model =
     }
 
 
+type alias ServerConfig =
+    { forceHeadless : Bool
+    }
+
+
 type alias NetworkStatus =
     { isOnline : Bool
     , lastError : Maybe String
@@ -285,16 +290,27 @@ init flags url key =
         route =
             parseUrl url
 
-        cmd =
+        apiBaseUrl =
+            "/api"
+
+        -- Always fetch config on init
+        configCmd =
+            fetchConfig apiBaseUrl
+
+        -- Route-specific commands
+        routeCmd =
             case route of
                 ReportView reportId ->
-                    fetchReport ("http://localhost:8080/api") reportId
+                    fetchReport apiBaseUrl reportId
 
                 TestHistory ->
-                    fetchTestHistory ("http://localhost:8080/api") initTestHistory
+                    fetchTestHistory apiBaseUrl initTestHistory
 
                 _ ->
                     Cmd.none
+
+        cmd =
+            Cmd.batch [ configCmd, routeCmd ]
     in
     ( { key = key
       , url = url
@@ -471,6 +487,7 @@ type Msg
     = NoOp
     | LinkClicked Browser.UrlRequest
     | UrlChanged Url.Url
+    | ConfigFetched (Result Http.Error ServerConfig)
     | UpdateGameUrl String
     | UpdateMaxDuration String
     | ToggleHeadless
@@ -535,6 +552,15 @@ update msg model =
     case msg of
         NoOp ->
             ( model, Cmd.none )
+
+        ConfigFetched result ->
+            case result of
+                Ok config ->
+                    ( { model | forceHeadless = config.forceHeadless }, Cmd.none )
+
+                Err _ ->
+                    -- If config fetch fails, keep default (False)
+                    ( model, Cmd.none )
 
         LinkClicked urlRequest ->
             case urlRequest of
@@ -1343,11 +1369,25 @@ submitTestRequest apiBaseUrl form =
         TestSubmitted
 
 
+serverConfigDecoder : Decode.Decoder ServerConfig
+serverConfigDecoder =
+    Decode.map ServerConfig
+        (Decode.field "forceHeadless" Decode.bool)
+
+
 testSubmitResponseDecoder : Decode.Decoder TestSubmitResponse
 testSubmitResponseDecoder =
     Decode.map2 TestSubmitResponse
         (Decode.field "testId" Decode.string)
         (Decode.field "status" Decode.string)
+
+
+fetchConfig : String -> Cmd Msg
+fetchConfig apiBaseUrl =
+    getWithCors
+        (apiBaseUrl ++ "/config")
+        serverConfigDecoder
+        ConfigFetched
 
 
 pollTestStatus : String -> String -> Cmd Msg
