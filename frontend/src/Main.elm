@@ -37,6 +37,7 @@ type alias Model =
     , url : Url.Url
     , route : Route
     , apiBaseUrl : String
+    , forceHeadless : Bool
     , testForm : TestForm
     , testStatus : Maybe TestStatus
     , currentReport : Maybe Report
@@ -299,6 +300,7 @@ init flags url key =
       , url = url
       , route = route
       , apiBaseUrl = "/api"  -- Uses Vite proxy in dev, relative path in production
+      , forceHeadless = False  -- Will be set to True in production via backend
       , testForm = initTestForm
       , testStatus = Nothing
       , currentReport = Nothing
@@ -421,7 +423,7 @@ initTestForm : TestForm
 initTestForm =
     { gameUrl = ""
     , maxDuration = 60
-    , headless = False
+    , headless = True
     , validationError = Nothing
     , submitting = False
     , submitError = Nothing
@@ -1791,7 +1793,7 @@ viewTestSubmission model =
                             [ type_ "checkbox"
                             , checked form.headless
                             , onClick ToggleHeadless
-                            , disabled form.submitting
+                            , disabled (form.submitting || model.forceHeadless)
                             , class "w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2 disabled:cursor-not-allowed"
                             ]
                             []
