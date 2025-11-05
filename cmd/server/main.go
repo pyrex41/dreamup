@@ -203,6 +203,12 @@ func (s *Server) handleTestSubmit(w http.ResponseWriter, r *http.Request) {
 	s.jobs[testID] = job
 	s.mu.Unlock()
 
+	// Persist test to database
+	if err := s.db.CreateTest(testID, req.URL, "pending"); err != nil {
+		log.Printf("Warning: Failed to persist test to database: %v", err)
+		// Continue anyway - test will run in memory
+	}
+
 	// Start test execution in background
 	go s.executeTest(job)
 
@@ -468,6 +474,12 @@ func (s *Server) handleBatchTestSubmit(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.jobs[testID] = job
 		s.mu.Unlock()
+
+		// Persist test to database
+		if err := s.db.CreateTest(testID, url, "pending"); err != nil {
+			log.Printf("Warning: Failed to persist batch test to database: %v", err)
+			// Continue anyway - test will run in memory
+		}
 
 		testIDs = append(testIDs, testID)
 
@@ -938,6 +950,18 @@ func (s *Server) executeTest(job *TestJob) {
 	}
 	s.mu.Unlock()
 
+	// Persist completed test to database
+	if err := s.db.CompleteTest(
+		job.ID,
+		"completed",
+		score.OverallScore,
+		int(report.SessionDuration),
+		report.ReportID,
+		report,
+	); err != nil {
+		log.Printf("Warning: Failed to persist completed test to database: %v", err)
+	}
+
 	log.Printf("Test %s completed with score: %d/100", job.ID, score.OverallScore)
 }
 
@@ -951,6 +975,11 @@ func (s *Server) updateJob(id, status string, progress int, message string) {
 		job.Progress = progress
 		job.Message = message
 		job.UpdatedAt = time.Now()
+
+		// Persist status updates to database
+		if err := s.db.UpdateTestStatus(id, status); err != nil {
+			log.Printf("Warning: Failed to update test status in database: %v", err)
+		}
 	}
 }
 
