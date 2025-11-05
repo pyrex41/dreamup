@@ -269,8 +269,17 @@ Examples:
 - If showing active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Game is actively playing"}
 - If loading screen: {"game_started": false, "action_needed": false, "button_text": "", "click_x": 0, "click_y": 0, "description": "Loading screen"}`
 
-	// Create context with 3 second timeout for faster failure
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// ===== DETAILED LOGGING =====
+	log.Printf("[Vision Request] ========================================")
+	log.Printf("[Vision Request] Prompt being sent to LLM:")
+	log.Printf("[Vision Request] %s", prompt)
+	log.Printf("[Vision Request] Screenshot metadata: %dx%d, %d bytes", screenshot.Width, screenshot.Height, len(screenshot.Data))
+	log.Printf("[Vision Request] Base64 image size: %d chars", len(imageBase64))
+	log.Printf("[Vision Request] Model: %s", openai.GPT4oMini)
+	log.Printf("[Vision Request] ========================================")
+
+	// Create context with 15 second timeout (vision API with large images can be slow)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	resp, err := v.client.CreateChatCompletion(
@@ -299,14 +308,22 @@ Examples:
 	)
 
 	if err != nil {
+		log.Printf("[Vision Response] ERROR: %v", err)
 		return nil, fmt.Errorf("vision API call failed: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
+		log.Printf("[Vision Response] ERROR: No choices in response")
 		return nil, fmt.Errorf("no response from vision API")
 	}
 
 	responseText := strings.TrimSpace(resp.Choices[0].Message.Content)
+
+	// ===== DETAILED RESPONSE LOGGING =====
+	log.Printf("[Vision Response] ========================================")
+	log.Printf("[Vision Response] Raw response from LLM:")
+	log.Printf("[Vision Response] %s", responseText)
+	log.Printf("[Vision Response] ========================================")
 
 	// Parse JSON response
 	var result struct {
@@ -327,12 +344,13 @@ Examples:
 	}
 
 	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+		log.Printf("[Vision Parse] ERROR: Failed to parse JSON: %v", err)
+		log.Printf("[Vision Parse] Attempted to parse: %s", responseText)
 		return nil, fmt.Errorf("failed to parse vision response: %w (response: %s)", err, responseText)
 	}
 
-	// Log the full vision response for debugging
-	log.Printf("[Vision] Raw response: %s", responseText)
-	log.Printf("[Vision] Parsed - GameStarted: %v, ActionNeeded: %v, ButtonText: '%s', Coords: (%d, %d), Description: '%s'",
+	// Log the parsed results
+	log.Printf("[Vision Parsed] GameStarted: %v, ActionNeeded: %v, ButtonText: '%s', Coords: (%d, %d), Description: '%s'",
 		result.GameStarted, result.ActionNeeded, result.ButtonText, result.ClickX, result.ClickY, result.Description)
 
 	return &GameplayAction{
