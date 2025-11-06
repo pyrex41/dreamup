@@ -672,27 +672,10 @@ func (s *Server) executeTest(job *TestJob) {
 	log.Printf("Starting test %s for URL: %s (concurrent: %d/%d)",
 		job.ID, job.Request.URL, len(s.testSemaphore), s.maxConcurrent)
 
-	// Create a channel to signal test completion
-	done := make(chan struct{})
-
-	// Start a goroutine that enforces the overall timeout
-	go func() {
-		// Add buffer time for browser setup, navigation, etc. (30 seconds)
-		totalTimeout := time.Duration(job.Request.MaxDuration+30) * time.Second
-		timer := time.NewTimer(totalTimeout)
-		defer timer.Stop()
-
-		select {
-		case <-done:
-			// Test completed normally
-			return
-		case <-timer.C:
-			// Timeout exceeded
-			log.Printf("⏱️ Test %s exceeded timeout (%ds + 30s buffer), marking as failed", job.ID, job.Request.MaxDuration)
-			s.updateJob(job.ID, "failed", 100, fmt.Sprintf("Test exceeded maximum duration (%ds)", job.Request.MaxDuration))
-		}
-	}()
-	defer close(done)
+	// Note: Duration enforcement is handled by the gameplay loops themselves.
+	// Standard gameplay mode checks time.Since(gameplayStart) < gameplayDuration
+	// Intelligent gameplay mode limits the number of attempts based on duration
+	// No separate timeout handler is needed - tests complete naturally when duration is reached
 
 	// Update status to running
 	s.updateJob(job.ID, "running", 10, "Initializing browser...")
