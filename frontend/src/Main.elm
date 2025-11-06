@@ -1936,7 +1936,6 @@ viewTestSubmission model =
                         []
                     , p [ class "text-sm text-gray-500" ] [ text "Maximum time allowed for the test (60-300 seconds)" ]
                     ]
-                {- Commented out for now
                 , div [ class "flex flex-col gap-2" ]
                     [ label [ class "block text-sm font-medium text-gray-700" ]
                         [ text "Game Mechanics (Optional)"
@@ -1945,14 +1944,13 @@ viewTestSubmission model =
                         [ value form.gameMechanics
                         , onInput UpdateGameMechanics
                         , disabled form.submitting
-                        , placeholder "e.g., Pull back on the bird like a slingshot and release to shoot"
+                        , placeholder "e.g., Angry Birds: Launch birds from slingshot to destroy pigs and structures. Click and drag slingshot to aim and shoot."
                         , rows 3
                         , class "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
                         ]
                         []
-                    , p [ class "text-sm text-gray-500" ] [ text "Describe how to play the game (helps the AI understand game mechanics)" ]
+                    , p [ class "text-sm text-gray-500" ] [ text "Describe how to play the game (enables AI-powered intelligent gameplay)" ]
                     ]
-                -}
                 , div [ class "flex items-center" ]
                     [ label [ class "flex items-center cursor-pointer" ]
                         [ input
