@@ -254,7 +254,7 @@ type GameplayAction struct {
 }
 
 // DetectGameplayState analyzes screenshot to determine if game has started or if action is needed
-func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot) (*GameplayAction, error) {
+func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot, gameMechanics string) (*GameplayAction, error) {
 	// Apply grid overlay to screenshot for more reliable coordinate detection
 	// Using 20 columns (A-T) and 12 rows (1-12) = 64x60 pixel cells for 1280x720
 	gridCols := 20
@@ -270,6 +270,13 @@ func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot) (*Gamepl
 	// Encode screenshot with grid to base64
 	imageBase64 := base64.StdEncoding.EncodeToString(griddedScreenshot.Data)
 
+	// Build game mechanics section if provided
+	var mechanicsSection string
+	if gameMechanics != "" {
+		mechanicsSection = fmt.Sprintf("\n\nGAME MECHANICS:\n%s\n\nUse these mechanics to understand how to interact with the game once gameplay has started.\n", gameMechanics)
+		log.Printf("[Vision Game Mechanics] Provided: %s", gameMechanics)
+	}
+
 	// Create vision request asking if game is playing or if action needed
 	// UPDATED: Now using grid-based coordinate system
 	prompt := fmt.Sprintf(`Analyze this game screenshot carefully and determine:
@@ -278,6 +285,12 @@ func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot) (*Gamepl
 2. If not playing, is there a button or element that needs to be clicked to start/continue?
 3. If a button needs to be clicked, identify which GRID CELL it's in.
 
+CRITICAL RULES:
+- NEVER click buttons like "MORE GAMES", "HOME", "MENU", "EXIT" - these navigate AWAY from the game
+- IGNORE buttons in rows 1-3 (top of screen) - they are usually navigation/ads
+- If you see game elements (slingshot, birds, level structure) loading, set game_started=true
+- ONLY click PLAY, level numbers, or START buttons to progress INTO the game
+%s
 GRID SYSTEM INSTRUCTIONS:
 - The image has a %dx%d grid overlay (columns A-%s, rows 1-%d)
 - Each grid cell is labeled with column letter + row number (e.g., "J7", "D3")
@@ -291,6 +304,7 @@ IMPORTANT TIPS:
 - Horizontally centered buttons are usually in columns I, J, or K (middle columns)
 - Small buttons may fit entirely within one cell
 - Large buttons span multiple cells - identify the cell at their CENTER
+- For Angry Birds PLAY button: always use row 10 (J10 or K10), NOT row 9
 
 Respond in JSON format:
 {
@@ -302,13 +316,11 @@ Respond in JSON format:
 }
 
 Examples:
-- Angry Birds PLAY button (center-bottom): {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J10", "description": "Angry Birds main menu with PLAY button"}
-- PLAY button in lower-center: {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J9", "description": "Main menu with PLAY button below title"}
-- START button very low: {"game_started": false, "action_needed": true, "button_text": "START", "grid_cell": "J11", "description": "Main menu with START button at bottom"}
-- Level "1" button on left: {"game_started": false, "action_needed": true, "button_text": "1", "grid_cell": "D4", "description": "Level selection screen"}
+- Angry Birds main menu: {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J10", "description": "Angry Birds main menu with PLAY button in lower center"}
+- Angry Birds level select: {"game_started": false, "action_needed": true, "button_text": "1", "grid_cell": "D4", "description": "Level selection screen with level 1 button"}
 - Active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Game is actively playing"}
-- Loading screen: {"game_started": false, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Loading screen"}`,
-		gridCols, gridRows, string(rune('A'+gridCols-1)), gridRows)
+- Loading screen: {"game_started": false, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Loading screen, no action possible"}`,
+		mechanicsSection, gridCols, gridRows, string(rune('A'+gridCols-1)), gridRows)
 
 	// ===== DETAILED LOGGING =====
 	log.Printf("[Vision Request] ========================================")

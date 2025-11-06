@@ -27,9 +27,10 @@ const (
 
 // TestRequest represents a test submission
 type TestRequest struct {
-	URL         string `json:"url"`
-	MaxDuration int    `json:"maxDuration,omitempty"`
-	Headless    bool   `json:"headless"`
+	URL           string `json:"url"`
+	MaxDuration   int    `json:"maxDuration,omitempty"`
+	Headless      bool   `json:"headless"`
+	GameMechanics string `json:"gameMechanics,omitempty"` // Optional description of how to play the game
 }
 
 // TestResponse represents the test submission response
@@ -40,9 +41,10 @@ type TestResponse struct {
 
 // BatchTestRequest represents a batch test submission (max 10 URLs)
 type BatchTestRequest struct {
-	URLs        []string `json:"urls"`
-	MaxDuration int      `json:"maxDuration,omitempty"`
-	Headless    bool     `json:"headless"`
+	URLs          []string `json:"urls"`
+	MaxDuration   int      `json:"maxDuration,omitempty"`
+	Headless      bool     `json:"headless"`
+	GameMechanics string   `json:"gameMechanics,omitempty"` // Optional description of how to play the game
 }
 
 // BatchTestResponse represents the batch test submission response
@@ -815,7 +817,7 @@ func (s *Server) executeTest(job *TestJob) {
 			lastScreenshotHash = currentHash
 
 			// Ask vision AI: "Is the game actively playing, or do we need to click something?"
-			action, err := visionDOMDetector.DetectGameplayState(screenshot)
+			action, err := visionDOMDetector.DetectGameplayState(screenshot, job.Request.GameMechanics)
 			if err != nil {
 				log.Printf("Warning: Vision gameplay detection failed: %v", err)
 				// Continue anyway - might be playing

@@ -170,6 +170,7 @@ type alias TestForm =
     { gameUrl : String
     , maxDuration : Int
     , headless : Bool
+    , gameMechanics : String
     , validationError : Maybe String
     , submitting : Bool
     , submitError : Maybe String
@@ -465,6 +466,7 @@ initTestForm =
     { gameUrl = ""
     , maxDuration = 60
     , headless = True
+    , gameMechanics = ""
     , validationError = Nothing
     , submitting = False
     , submitError = Nothing
@@ -516,6 +518,7 @@ type Msg
     | UpdateGameUrl String
     | UpdateMaxDuration String
     | ToggleHeadless
+    | UpdateGameMechanics String
     | SubmitTest
     | TestSubmitted (Result Http.Error TestSubmitResponse)
     | PollStatus String
@@ -660,6 +663,16 @@ update msg model =
 
                 updatedForm =
                     { form | headless = not form.headless }
+            in
+            ( { model | testForm = updatedForm }, Cmd.none )
+
+        UpdateGameMechanics mechanics ->
+            let
+                form =
+                    model.testForm
+
+                updatedForm =
+                    { form | gameMechanics = mechanics }
             in
             ( { model | testForm = updatedForm }, Cmd.none )
 
@@ -1441,12 +1454,20 @@ type alias TestSubmitResponse =
 submitTestRequest : String -> TestForm -> Cmd Msg
 submitTestRequest apiBaseUrl form =
     let
+        baseFields =
+            [ ( "url", Encode.string form.gameUrl )
+            , ( "maxDuration", Encode.int form.maxDuration )
+            , ( "headless", Encode.bool form.headless )
+            ]
+
+        fieldsWithMechanics =
+            if String.isEmpty form.gameMechanics then
+                baseFields
+            else
+                baseFields ++ [ ( "gameMechanics", Encode.string form.gameMechanics ) ]
+
         body =
-            Encode.object
-                [ ( "url", Encode.string form.gameUrl )
-                , ( "maxDuration", Encode.int form.maxDuration )
-                , ( "headless", Encode.bool form.headless )
-                ]
+            Encode.object fieldsWithMechanics
     in
     postWithCors
         (apiBaseUrl ++ "/tests")
@@ -1912,6 +1933,21 @@ viewTestSubmission model =
                         ]
                         []
                     , p [ class "text-sm text-gray-500" ] [ text "Maximum time allowed for the test (60-300 seconds)" ]
+                    ]
+                , div [ class "flex flex-col gap-2" ]
+                    [ label [ class "block text-sm font-medium text-gray-700" ]
+                        [ text "Game Mechanics (Optional)"
+                        ]
+                    , textarea
+                        [ value form.gameMechanics
+                        , onInput UpdateGameMechanics
+                        , disabled form.submitting
+                        , placeholder "e.g., Pull back on the bird like a slingshot and release to shoot"
+                        , rows 3
+                        , class "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100"
+                        ]
+                        []
+                    , p [ class "text-sm text-gray-500" ] [ text "Describe how to play the game (helps the AI understand game mechanics)" ]
                     ]
                 , div [ class "flex items-center" ]
                     [ label [ class "flex items-center cursor-pointer" ]
