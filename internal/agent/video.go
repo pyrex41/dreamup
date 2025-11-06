@@ -183,10 +183,27 @@ func (vr *VideoRecorder) SaveAsMP4(outputPath string) error {
 		}
 	}
 
+	// Calculate actual frame rate from captured frames
+	// Chrome screencast captures frames at variable rates, so we need to calculate
+	// the actual FPS based on the time span and frame count
+	actualFPS := vr.FrameRate // Default to 30 FPS
+	if len(vr.FrameTimes) >= 2 {
+		duration := vr.FrameTimes[len(vr.FrameTimes)-1].Sub(vr.FrameTimes[0]).Seconds()
+		if duration > 0 {
+			actualFPS = int(float64(len(vr.Frames)) / duration)
+			// Clamp to reasonable range (1-60 FPS)
+			if actualFPS < 1 {
+				actualFPS = 1
+			} else if actualFPS > 60 {
+				actualFPS = 60
+			}
+		}
+	}
+
 	// Use ffmpeg to create MP4
 	cmd := exec.Command("ffmpeg",
-		"-y",                                        // Overwrite output file
-		"-framerate", fmt.Sprintf("%d", vr.FrameRate), // Input frame rate
+		"-y",                                     // Overwrite output file
+		"-framerate", fmt.Sprintf("%d", actualFPS), // Input frame rate (calculated from actual capture)
 		"-i", filepath.Join(tmpDir, "frame_%05d.jpg"), // Input pattern
 		"-c:v", "libx264",    // H.264 codec
 		"-preset", "fast",    // Encoding speed preset
