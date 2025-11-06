@@ -1,22 +1,47 @@
 # DreamUp QA Platform - Current Progress
 
-**Last Updated**: 2025-11-05 15:00
-**Project Status**: ✅ Production-ready with vision debugging improvements
-**Overall Completion**: ~98% (Core features + batch testing + vision improvements)
+**Last Updated:** November 6, 2025
+**Current Branch:** `master`
+**Latest Commit:** `25e4886` - Video seeking support and media file path fix
+**Project Status**: ✅ Production-ready with complete media infrastructure
+**Overall Completion**: ~99% (Core features + batch testing + vision improvements + media fixes)
 
 ---
 
 ## 🎯 Quick Status
 
-### Current Milestone: Vision Accuracy & Game Interaction
-**Active Work**: Debugging Angry Birds gameplay interaction (branch: `angry`)
-**Latest Achievement**: Fixed vision button detection, achieving 95/100 test scores for menu navigation
+### Current Milestone: Media Infrastructure Complete
+**Latest Achievement**: Video seeking support and media path management fully operational
+**Project Status**: Production-ready with all core features functional
 
 ---
 
-## 📊 Recent Accomplishments (Last 24 Hours)
+## 📊 Recent Accomplishments (Last 3 Days)
 
-### 1. ✅ Vision Button Detection Fix (2025-11-05)
+### 1. ✅ Video Seeking & Media Infrastructure (2025-11-06)
+**Problem Solved**: Videos couldn't seek/scrub - users had to watch from beginning
+**Commit**: `25e4886`
+
+**Changes Made**:
+- Added `-movflags faststart` to ffmpeg encoding (internal/agent/video.go:195)
+- Created `/media/` HTTP endpoint (cmd/server/main.go:1328-1334)
+- Fixed screenshot/video path storage to use filename only
+- Created migration scripts for existing media files
+- Re-encoded 9 existing videos with faststart flag
+
+**Technical Impact**:
+- MP4 moov atom now at file beginning (critical for seeking)
+- Browser can seek instantly without downloading entire file
+- HTTP Range requests working correctly (206 Partial Content)
+- All media accessible via clean `/media/<filename>` URLs
+
+**Results**:
+- ✅ Video seeking fully functional
+- ✅ 9 existing videos fixed
+- ✅ 2 database records migrated
+- ✅ Future videos will have seeking by default
+
+### 2. ✅ Vision Button Detection Fix (2025-11-05)
 **Problem Solved**: GPT-4o was consistently misdetecting button coordinates by 100-150 pixels
 
 **Solution Implemented** (3 commits):
