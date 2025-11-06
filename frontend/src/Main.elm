@@ -3041,11 +3041,18 @@ viewMediaSection model evidence =
             Just videoUrl ->
                 div [ class "space-y-4" ]
                     [ video
-                        [ class "w-full rounded-lg"
-                        , Html.Attributes.attribute "controls" ""
+                        [ Html.Attributes.attribute "id" "gameplay-video"
+                        , class "w-full rounded-lg shadow-lg"
+                        , Html.Attributes.attribute "controls" "controls"
                         , Html.Attributes.attribute "preload" "metadata"
+                        , Html.Attributes.attribute "controlsList" "nodownload"
+                        , Html.Attributes.attribute "style" "max-height: 600px;"
                         ]
-                        [ Html.Attributes.attribute "src" videoUrl |> (\_ -> source [ Html.Attributes.attribute "src" videoUrl, Html.Attributes.attribute "type" "video/mp4" ] [])
+                        [ source
+                            [ Html.Attributes.attribute "src" videoUrl
+                            , Html.Attributes.attribute "type" "video/mp4"
+                            ]
+                            []
                         , text "Your browser does not support the video tag."
                         ]
                     ]
