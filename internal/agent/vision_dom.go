@@ -32,11 +32,12 @@ type VisionDOMDetector struct {
 
 // NewVisionDOMDetector creates a new vision-based DOM detector
 func NewVisionDOMDetector(ctx context.Context) (*VisionDOMDetector, error) {
+	// Use OpenAI (more accurate for spatial reasoning)
+	// Groq's Llama 4 Scout is faster but less accurate with grid coordinates
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
+		return nil, fmt.Errorf("OPENAI_API_KEY environment variable required")
 	}
-
 	client := openai.NewClient(apiKey)
 
 	return &VisionDOMDetector{
@@ -90,7 +91,7 @@ Return the EXACT text you see on the button, in the same case.`,
 					},
 				},
 			},
-			MaxTokens: 150,
+			MaxCompletionTokens: 500, // GPT-5 needs more tokens than GPT-4o
 		},
 	)
 
@@ -277,50 +278,22 @@ func (v *VisionDOMDetector) DetectGameplayState(screenshot *Screenshot, gameMech
 		log.Printf("[Vision Game Mechanics] Provided: %s", gameMechanics)
 	}
 
-	// Create vision request asking if game is playing or if action needed
-	// UPDATED: Now using grid-based coordinate system
-	prompt := fmt.Sprintf(`Analyze this game screenshot carefully and determine:
+	// Simplified prompt for GPT-5 (uses fewer tokens)
+	prompt := fmt.Sprintf(`Game screenshot analysis. Grid overlay: %dx%d (A-%s, 1-%d).
 
-1. Is the game actively playing (gameplay visible, not a menu/splash screen)?
-2. If not playing, is there a button or element that needs to be clicked to start/continue?
-3. If a button needs to be clicked, identify which GRID CELL it's in.
-
-CRITICAL RULES:
-- NEVER click buttons like "MORE GAMES", "HOME", "MENU", "EXIT" - these navigate AWAY from the game
-- IGNORE buttons in rows 1-3 (top of screen) - they are usually navigation/ads
-- If you see game elements (slingshot, birds, level structure) loading, set game_started=true
-- ONLY click PLAY, level numbers, or START buttons to progress INTO the game
+Is game playing? If not, what button to click?
+- ONLY click PLAY/START/level numbers (rows 7-12)
+- IGNORE "MORE GAMES", top nav (rows 1-3)
+- Angry Birds PLAY: use J10 or K10
 %s
-GRID SYSTEM INSTRUCTIONS:
-- The image has a %dx%d grid overlay (columns A-%s, rows 1-%d)
-- Each grid cell is labeled with column letter + row number (e.g., "J7", "D3")
-- Columns run left to right: A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T
-- Rows run top to bottom: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
-- Find the grid cell containing the CENTER of the clickable button
-- Simply identify the cell letter+number where the button center is located
-
-IMPORTANT TIPS:
-- Menu buttons typically appear in the LOWER half (rows 7-12)
-- Horizontally centered buttons are usually in columns I, J, or K (middle columns)
-- Small buttons may fit entirely within one cell
-- Large buttons span multiple cells - identify the cell at their CENTER
-- For Angry Birds PLAY button: always use row 10 (J10 or K10), NOT row 9
-
-Respond in JSON format:
-{
-  "game_started": true/false,
-  "action_needed": true/false,
-  "button_text": "exact text on button to click" (if action_needed is true),
-  "grid_cell": "column+row like J7 or D3" (if action_needed is true),
-  "description": "brief description of what you see"
-}
+JSON response:
+{"game_started": bool, "action_needed": bool, "button_text": "text", "grid_cell": "J10", "description": "brief"}
 
 Examples:
-- Angry Birds main menu: {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J10", "description": "Angry Birds main menu with PLAY button in lower center"}
-- Angry Birds level select: {"game_started": false, "action_needed": true, "button_text": "1", "grid_cell": "D4", "description": "Level selection screen with level 1 button"}
-- Active gameplay: {"game_started": true, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Game is actively playing"}
-- Loading screen: {"game_started": false, "action_needed": false, "button_text": "", "grid_cell": "", "description": "Loading screen, no action possible"}`,
-		mechanicsSection, gridCols, gridRows, string(rune('A'+gridCols-1)), gridRows)
+- Menu: {"game_started": false, "action_needed": true, "button_text": "PLAY", "grid_cell": "J10", "description": "main menu"}
+- Levels: {"game_started": false, "action_needed": true, "button_text": "1", "grid_cell": "D4", "description": "level select"}
+- Playing: {"game_started": true, "action_needed": false, "button_text": "", "grid_cell": "", "description": "gameplay active"}`,
+		gridCols, gridRows, string(rune('A'+gridCols-1)), gridRows, mechanicsSection)
 
 	// ===== DETAILED LOGGING =====
 	log.Printf("[Vision Request] ========================================")
@@ -328,17 +301,20 @@ Examples:
 	log.Printf("[Vision Request] %s", prompt)
 	log.Printf("[Vision Request] Screenshot metadata: %dx%d, %d bytes", screenshot.Width, screenshot.Height, len(screenshot.Data))
 	log.Printf("[Vision Request] Base64 image size: %d chars", len(imageBase64))
-	log.Printf("[Vision Request] Model: %s", openai.GPT4o)
+	// Use GPT-4o for better spatial accuracy
+	modelName := openai.GPT4o
+
+	log.Printf("[Vision Request] Model: %s", modelName)
 	log.Printf("[Vision Request] ========================================")
 
-	// Create context with 15 second timeout (vision API with large images can be slow)
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// Create context with 30 second timeout (vision API with large images can be slow)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	resp, err := v.client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
-			Model: openai.GPT4o, // Using full GPT-4o for better spatial reasoning
+			Model: modelName,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role: openai.ChatMessageRoleUser,
@@ -356,7 +332,7 @@ Examples:
 					},
 				},
 			},
-			MaxTokens: 300,
+			MaxCompletionTokens: 800, // GPT-5 needs more tokens than GPT-4o
 		},
 	)
 
@@ -368,6 +344,12 @@ Examples:
 	if len(resp.Choices) == 0 {
 		log.Printf("[Vision Response] ERROR: No choices in response")
 		return nil, fmt.Errorf("no response from vision API")
+	}
+
+	// Debug: log finish reason and refusal
+	log.Printf("[Vision Debug] FinishReason: %s", resp.Choices[0].FinishReason)
+	if resp.Choices[0].Message.Refusal != "" {
+		log.Printf("[Vision Debug] Refusal: %s", resp.Choices[0].Message.Refusal)
 	}
 
 	responseText := strings.TrimSpace(resp.Choices[0].Message.Content)
@@ -387,18 +369,32 @@ Examples:
 		Description  string `json:"description"`
 	}
 
-	// Handle markdown code fences if present
-	if strings.HasPrefix(responseText, "```json") {
-		responseText = strings.TrimPrefix(responseText, "```json")
-		responseText = strings.TrimPrefix(responseText, "```")
-		responseText = strings.TrimSuffix(responseText, "```")
-		responseText = strings.TrimSpace(responseText)
+	// Extract JSON from response (handle both plain JSON and markdown code fences)
+	jsonText := responseText
+
+	// Look for JSON in markdown code fences
+	if strings.Contains(responseText, "```json") {
+		start := strings.Index(responseText, "```json")
+		end := strings.Index(responseText[start+7:], "```")
+		if end != -1 {
+			jsonText = responseText[start+7 : start+7+end]
+			jsonText = strings.TrimSpace(jsonText)
+		}
+	} else if strings.Contains(responseText, "{") {
+		// Find the JSON object in the response
+		start := strings.Index(responseText, "{")
+		end := strings.LastIndex(responseText, "}")
+		if start != -1 && end != -1 && end > start {
+			jsonText = responseText[start : end+1]
+		}
 	}
 
-	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+	jsonText = strings.TrimSpace(jsonText)
+
+	if err := json.Unmarshal([]byte(jsonText), &result); err != nil {
 		log.Printf("[Vision Parse] ERROR: Failed to parse JSON: %v", err)
-		log.Printf("[Vision Parse] Attempted to parse: %s", responseText)
-		return nil, fmt.Errorf("failed to parse vision response: %w (response: %s)", err, responseText)
+		log.Printf("[Vision Parse] Attempted to parse: %s", jsonText)
+		return nil, fmt.Errorf("failed to parse vision response: %w (response: %s)", err, jsonText)
 	}
 
 	// Convert grid cell to pixel coordinates

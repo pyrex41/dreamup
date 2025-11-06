@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -952,64 +953,137 @@ func (s *Server) executeTest(job *TestJob) {
 	lastScreenshotTime := time.Now()
 	screenshotInterval := 2 * time.Second // Capture every 2 seconds
 
-	if useCanvasMode {
-		log.Printf("Starting %v of interactive gameplay with canvas keyboard events...", gameplayDuration)
-	} else {
-		log.Printf("Starting %v of interactive gameplay with window keyboard events...", gameplayDuration)
-	}
+	// Adaptive gameplay mode - automatically switches between keyboard, mouse clicks, and mouse drags
+	gameplayMode := "keyboard"
+	unchangedCount := 0
+	lastGameplayHash := ""
+	const unchangedThreshold = 5 // Switch modes after 5 unchanged attempts
 
-	// Gameplay loop - send keyboard events to canvas or window
+	// Get screen dimensions for mouse actions
+	screenWidth := 1280  // Default, will be updated from screenshot
+	screenHeight := 720
+
+	log.Printf("Starting %v of adaptive gameplay (starting with keyboard)...", gameplayDuration)
+
+	// Gameplay loop - adaptive input mode
 	for time.Since(gameplayStart) < gameplayDuration {
 		progress := 60 + int(25*time.Since(gameplayStart).Seconds()/gameplayDuration.Seconds())
 		s.updateJob(job.ID, "running", progress, fmt.Sprintf("Playing game... %.0fs elapsed", time.Since(gameplayStart).Seconds()))
 
-		// Capture screenshot every 2 seconds during gameplay
-		if time.Since(lastScreenshotTime) >= screenshotInterval {
-			screenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextGameplay)
-			if err != nil {
-				log.Printf("Warning: Failed to capture gameplay screenshot: %v", err)
-			} else {
+		// Capture screenshot for both saving and change detection
+		screenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextGameplay)
+		var currentHash string
+		if err == nil && screenshot != nil {
+			currentHash = screenshot.Hash()
+			screenWidth = screenshot.Width
+			screenHeight = screenshot.Height
+
+			// Save screenshot every 2 seconds
+			if time.Since(lastScreenshotTime) >= screenshotInterval {
 				if err := screenshot.SaveToTemp(); err != nil {
 					log.Printf("Warning: Failed to save gameplay screenshot: %v", err)
 				} else {
 					gameplayScreenshots = append(gameplayScreenshots, screenshot)
 					log.Printf("✓ Captured gameplay screenshot (%d total)", len(gameplayScreenshots))
 				}
+				lastScreenshotTime = time.Now()
 			}
-			lastScreenshotTime = time.Now()
-		}
 
-		// Send varied key presses (more realistic gameplay)
-		gameplayActions := []string{
-			"ArrowUp", "ArrowUp", // Jump or move up twice
-			"ArrowRight", "ArrowRight", "ArrowRight", // Move right
-			"Space", // Action key
-			"ArrowLeft", "ArrowLeft", // Move left
-			"ArrowDown", // Duck or move down
-			"Space", // Action again
-			"ArrowRight", // Continue moving
-		}
-
-		for _, key := range gameplayActions {
-			var sent bool
-			var err error
-
-			if useCanvasMode {
-				sent, err = detector.SendKeyboardEventToCanvas(key)
+			// Check if screen changed since last action
+			if currentHash == lastGameplayHash && lastGameplayHash != "" {
+				unchangedCount++
+				log.Printf("[Adaptive] Screen unchanged (%d/%d) in %s mode", unchangedCount, unchangedThreshold, gameplayMode)
 			} else {
-				sent, err = detector.SendKeyboardEventToWindow(key)
+				if unchangedCount > 0 {
+					log.Printf("[Adaptive] Screen changed! %s mode is working", gameplayMode)
+				}
+				unchangedCount = 0
 			}
-
-			if err != nil {
-				log.Printf("Error sending key %s: %v", key, err)
-			} else if !sent {
-				log.Printf("Warning: Failed to send key %s", key)
-			}
-			time.Sleep(150 * time.Millisecond) // Slightly faster inputs
+			lastGameplayHash = currentHash
 		}
 
-		// Brief pause between action sequences
-		time.Sleep(200 * time.Millisecond)
+		// Adaptive mode switching based on effectiveness
+		if unchangedCount >= unchangedThreshold {
+			switch gameplayMode {
+			case "keyboard":
+				log.Printf("🔄 Keyboard not effective, switching to mouse clicks")
+				gameplayMode = "mouse-click"
+				unchangedCount = 0
+			case "mouse-click":
+				log.Printf("🔄 Mouse clicks not effective, switching to mouse drags")
+				gameplayMode = "mouse-drag"
+				unchangedCount = 0
+			case "mouse-drag":
+				log.Printf("🔄 Mouse drags not effective, cycling back to keyboard")
+				gameplayMode = "keyboard"
+				unchangedCount = 0
+			}
+		}
+
+		// Perform actions based on current mode
+		switch gameplayMode {
+		case "keyboard":
+			// Send varied key presses (existing behavior)
+			gameplayActions := []string{
+				"ArrowUp", "ArrowUp",
+				"ArrowRight", "ArrowRight", "ArrowRight",
+				"Space",
+				"ArrowLeft", "ArrowLeft",
+				"ArrowDown",
+				"Space",
+				"ArrowRight",
+			}
+
+			for _, key := range gameplayActions {
+				var sent bool
+				var err error
+
+				if useCanvasMode {
+					sent, err = detector.SendKeyboardEventToCanvas(key)
+				} else {
+					sent, err = detector.SendKeyboardEventToWindow(key)
+				}
+
+				if err != nil {
+					log.Printf("Error sending key %s: %v", key, err)
+				} else if !sent {
+					log.Printf("Warning: Failed to send key %s", key)
+				}
+				time.Sleep(150 * time.Millisecond)
+			}
+			time.Sleep(200 * time.Millisecond)
+
+		case "mouse-click":
+			// Perform 3-4 random clicks in game area
+			clickCount := 3 + rand.Intn(2) // 3 or 4 clicks
+			for i := 0; i < clickCount; i++ {
+				if visionDOMDetector != nil {
+					err := agent.PerformRandomClick(bm.GetContext(), screenWidth, screenHeight)
+					if err != nil {
+						log.Printf("Random click %d failed: %v", i+1, err)
+					}
+				}
+				time.Sleep(300 * time.Millisecond)
+			}
+			time.Sleep(500 * time.Millisecond)
+
+		case "mouse-drag":
+			// Try different drag patterns
+			patterns := []agent.DragPattern{
+				agent.DragPatternHorizontalLeft,  // Slingshot style
+				agent.DragPatternVerticalUp,       // Upward swipe
+				agent.DragPatternHorizontalRight,  // Right swipe
+			}
+			pattern := patterns[rand.Intn(len(patterns))]
+
+			if visionDOMDetector != nil {
+				err := agent.PerformRandomDrag(bm.GetContext(), pattern, screenWidth, screenHeight)
+				if err != nil {
+					log.Printf("Drag %s failed: %v", pattern, err)
+				}
+			}
+			time.Sleep(1 * time.Second) // Wait longer after drags
+		}
 	}
 
 	log.Printf("Gameplay simulation completed after %v", time.Since(gameplayStart))

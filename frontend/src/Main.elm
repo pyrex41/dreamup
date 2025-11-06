@@ -1798,11 +1798,13 @@ viewHeader model =
     header [ class "bg-slate-900 text-white shadow-lg" ]
         [ div [ class "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4" ]
             [ div [ class "flex items-center justify-between" ]
-                [ h1 [ class "text-2xl font-bold tracking-tight" ] [ text "DreamUp QA Agent" ]
+                [ a [ href "/", class "text-2xl font-bold tracking-tight hover:text-gray-200 transition-colors" ]
+                    [ text "DreamUp QA Agent" ]
                 , div [ class "flex items-center gap-6" ]
                     [ nav [ class "flex gap-4" ]
                         [ a [ href "/", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Home" ]
                         , a [ href "/submit", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Submit Test" ]
+                        , a [ href "/batch", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Batch Test" ]
                         , a [ href "/history", class "text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors" ] [ text "Test History" ]
                         ]
                     , viewNetworkStatus model.networkStatus
@@ -1934,6 +1936,7 @@ viewTestSubmission model =
                         []
                     , p [ class "text-sm text-gray-500" ] [ text "Maximum time allowed for the test (60-300 seconds)" ]
                     ]
+                {- Commented out for now
                 , div [ class "flex flex-col gap-2" ]
                     [ label [ class "block text-sm font-medium text-gray-700" ]
                         [ text "Game Mechanics (Optional)"
@@ -1949,6 +1952,7 @@ viewTestSubmission model =
                         []
                     , p [ class "text-sm text-gray-500" ] [ text "Describe how to play the game (helps the AI understand game mechanics)" ]
                     ]
+                -}
                 , div [ class "flex items-center" ]
                     [ label [ class "flex items-center cursor-pointer" ]
                         [ input
