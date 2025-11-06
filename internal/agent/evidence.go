@@ -98,8 +98,9 @@ func (s *Screenshot) SaveToTemp() error {
 		return fmt.Errorf("failed to save screenshot to %s: %w", filepath, err)
 	}
 
-	// Update screenshot filepath
-	s.Filepath = filepath
+	// Update screenshot filepath - store only the filename for HTTP access via /media/ endpoint
+	// Frontend will access as /media/filename instead of data/media/filename
+	s.Filepath = filename
 	return nil
 }
 

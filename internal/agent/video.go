@@ -192,6 +192,7 @@ func (vr *VideoRecorder) SaveAsMP4(outputPath string) error {
 		"-preset", "fast",    // Encoding speed preset
 		"-pix_fmt", "yuv420p", // Pixel format for compatibility
 		"-crf", "23",         // Quality (lower is better, 23 is good)
+		"-movflags", "faststart", // Move moov atom to beginning for fast seeking
 		outputPath,
 	)
 
@@ -221,7 +222,9 @@ func (vr *VideoRecorder) SaveToTemp() (string, error) {
 		return "", err
 	}
 
-	return filepath, nil
+	// Return only the filename for HTTP access via /media/ endpoint
+	// Frontend will access as /media/filename instead of data/media/filename
+	return filename, nil
 }
 
 // GetDuration returns the recording duration

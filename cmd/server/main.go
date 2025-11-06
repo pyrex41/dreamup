@@ -1325,6 +1325,14 @@ func main() {
 	mux.HandleFunc("/api/batch-tests", server.corsMiddleware(server.handleBatchTestSubmit))
 	mux.HandleFunc("/api/batch-tests/", server.corsMiddleware(server.handleBatchTestStatus))
 
+	// Serve media files (videos and screenshots)
+	mediaDir := "./data/media"
+	if _, err := os.Stat(mediaDir); err == nil {
+		mediaFS := http.FileServer(http.Dir(mediaDir))
+		mux.Handle("/media/", http.StripPrefix("/media/", mediaFS))
+		log.Printf("📁 Serving media files from: %s", mediaDir)
+	}
+
 	// Serve static files (frontend)
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {
