@@ -929,7 +929,7 @@ func (s *Server) executeTest(job *TestJob) {
 	// Declare variables for standard gameplay mode (must be before goto to avoid compilation error)
 	var useCanvasMode bool
 	var focused bool
-	var gameplayDuration time.Duration = 10 * time.Second
+	var gameplayDuration time.Duration = time.Duration(job.Request.MaxDuration) * time.Second
 	var gameplayStart time.Time
 	var gameplayScreenshots []*agent.Screenshot
 	var lastScreenshotTime time.Time
@@ -968,8 +968,13 @@ func (s *Server) executeTest(job *TestJob) {
 			// 2. Calculate optimal aim using GPT-4o
 			// 3. Execute precise CDP mouse drags
 			// 4. Cache successful actions for self-healing
-			maxGameplayAttempts := 3 // Number of shots to attempt
-			log.Printf("Executing %d AI-guided gameplay attempts...", maxGameplayAttempts)
+			// Estimate ~10-15s per attempt (Vision API call + drag action)
+			estimatedSecondsPerAttempt := 12
+			maxGameplayAttempts := job.Request.MaxDuration / estimatedSecondsPerAttempt
+			if maxGameplayAttempts < 1 {
+				maxGameplayAttempts = 1 // At least one attempt
+			}
+			log.Printf("Executing up to %d AI-guided gameplay attempts (duration: %ds)...", maxGameplayAttempts, job.Request.MaxDuration)
 
 			err = gameplayAgent.PlayGameLevel(gameName, job.Request.GameMechanics, maxGameplayAttempts)
 			if err != nil {
