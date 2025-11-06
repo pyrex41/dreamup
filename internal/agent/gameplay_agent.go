@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -35,6 +36,10 @@ const (
 	ActionTypeWait           GameplayActionType = "wait"            // Wait for game state to change
 	ActionTypeObserve        GameplayActionType = "observe"         // Take screenshot and analyze
 	ActionTypeClick          GameplayActionType = "click"           // Single click action
+	ActionTypeKeyPress       GameplayActionType = "keypress"        // Single key press (press and release)
+	ActionTypeKeyHold        GameplayActionType = "key_hold"        // Press and hold key down
+	ActionTypeKeyRelease     GameplayActionType = "key_release"     // Release a held key
+	ActionTypeKeySequence    GameplayActionType = "key_sequence"    // Sequence of key presses
 )
 
 // GameplayActionPlan represents a single action in a gameplay sequence
@@ -46,6 +51,9 @@ type GameplayActionPlan struct {
 	WaitMs      int                `json:"wait_ms,omitempty"`      // Duration to wait
 	Description string             `json:"description"`            // AI reasoning
 	ElementName string             `json:"element_name,omitempty"` // What element to find
+	Key         string             `json:"key,omitempty"`          // Key for keyboard actions (e.g., "ArrowUp", "w", "Space")
+	Keys        []string           `json:"keys,omitempty"`         // Keys for key_sequence actions
+	HoldMs      int                `json:"hold_ms,omitempty"`      // Duration to hold key (for key_hold)
 }
 
 // SlingshotDragAction represents a slingshot drag with grid-based coordinates
@@ -259,6 +267,242 @@ func (g *GameplayAgent) ExecuteDragAction(dragAction *SlingshotDragAction) error
 	return nil
 }
 
+// ExecuteKeyboardAction performs keyboard actions using existing keypress infrastructure
+func (g *GameplayAgent) ExecuteKeyboardAction(action *GameplayActionPlan) error {
+	switch action.Type {
+	case ActionTypeKeyPress:
+		return g.executeKeyPress(action.Key)
+	case ActionTypeKeyHold:
+		return g.executeKeyHold(action.Key, action.HoldMs)
+	case ActionTypeKeyRelease:
+		return g.executeKeyRelease(action.Key)
+	case ActionTypeKeySequence:
+		return g.executeKeySequence(action.Keys)
+	default:
+		return fmt.Errorf("unknown keyboard action type: %s", action.Type)
+	}
+}
+
+// executeKeyPress simulates a single key press (press and release)
+func (g *GameplayAgent) executeKeyPress(key string) error {
+	log.Printf("[Gameplay] Pressing key: %s", key)
+
+	// Use existing executeKeypress function via Action struct
+	action := NewKeypressAction(key, fmt.Sprintf("Gameplay key press: %s", key))
+	err := executeKeypress(g.ctx, action)
+	if err != nil {
+		return fmt.Errorf("failed to press key %s: %w", key, err)
+	}
+
+	log.Printf("[Gameplay] Key press completed: %s", key)
+	return nil
+}
+
+// executeKeyHold presses and holds a key for a specified duration
+func (g *GameplayAgent) executeKeyHold(key string, holdMs int) error {
+	log.Printf("[Gameplay] Holding key %s for %dms", key, holdMs)
+
+	// Map key to Unicode for chromedp
+	keyCode, err := mapKeyToUnicode(key)
+	if err != nil {
+		return err
+	}
+
+	// Use chromedp to send key down event
+	err = chromedp.Run(g.ctx,
+		chromedp.KeyEvent(keyCode),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to press down key %s: %w", key, err)
+	}
+
+	// Hold for specified duration
+	if holdMs > 0 {
+		time.Sleep(time.Duration(holdMs) * time.Millisecond)
+	}
+
+	log.Printf("[Gameplay] Key hold completed: %s (%dms)", key, holdMs)
+	return nil
+}
+
+// executeKeyRelease releases a held key
+func (g *GameplayAgent) executeKeyRelease(key string) error {
+	log.Printf("[Gameplay] Releasing key: %s", key)
+
+	// Map key to Unicode for chromedp
+	keyCode, err := mapKeyToUnicode(key)
+	if err != nil {
+		return err
+	}
+
+	// Use chromedp to send key up event
+	err = chromedp.Run(g.ctx,
+		chromedp.KeyEvent(keyCode),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to release key %s: %w", key, err)
+	}
+
+	log.Printf("[Gameplay] Key release completed: %s", key)
+	return nil
+}
+
+// executeKeySequence executes a sequence of key presses
+func (g *GameplayAgent) executeKeySequence(keys []string) error {
+	log.Printf("[Gameplay] Executing key sequence: %v", keys)
+
+	for i, key := range keys {
+		log.Printf("[Gameplay] Key sequence %d/%d: %s", i+1, len(keys), key)
+
+		err := g.executeKeyPress(key)
+		if err != nil {
+			return fmt.Errorf("failed to press key %s in sequence: %w", key, err)
+		}
+
+		// Small delay between keys in sequence
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	log.Printf("[Gameplay] Key sequence completed (%d keys)", len(keys))
+	return nil
+}
+
+// mapKeyToUnicode maps key names to Unicode values for chromedp
+func mapKeyToUnicode(key string) (string, error) {
+	switch key {
+	case "ArrowUp", "Up":
+		return "\ue013", nil
+	case "ArrowDown", "Down":
+		return "\ue015", nil
+	case "ArrowLeft", "Left":
+		return "\ue012", nil
+	case "ArrowRight", "Right":
+		return "\ue014", nil
+	case "Space", " ":
+		return " ", nil
+	case "Enter", "Return":
+		return "\r", nil
+	case "Escape", "Esc":
+		return "\ue00c", nil
+	case "Tab":
+		return "\t", nil
+	case "Backspace":
+		return "\ue003", nil
+	case "Delete":
+		return "\ue017", nil
+	default:
+		// For single character keys (w, a, s, d, etc.), use as-is
+		if len(key) == 1 {
+			return key, nil
+		}
+		return "", fmt.Errorf("unknown key: %s", key)
+	}
+}
+
+// ExecuteGameplayAction executes a single gameplay action from an action plan
+// This is the unified execution function that handles all action types
+func (g *GameplayAgent) ExecuteGameplayAction(action *GameplayActionPlan) error {
+	log.Printf("[Gameplay] Executing action: %s - %s", action.Type, action.Description)
+
+	switch action.Type {
+	case ActionTypeDetectElement:
+		// Detection actions don't execute anything, they're used for planning
+		log.Printf("[Gameplay] Detection action (no execution): looking for %s", action.ElementName)
+		return nil
+
+	case ActionTypeDragSlingshot:
+		// Parse grid cells and execute drag
+		startCell, err := parseGridCell(action.StartCell)
+		if err != nil {
+			return fmt.Errorf("invalid start cell %s: %w", action.StartCell, err)
+		}
+		endCell, err := parseGridCell(action.EndCell)
+		if err != nil {
+			return fmt.Errorf("invalid end cell %s: %w", action.EndCell, err)
+		}
+
+		dragAction := &SlingshotDragAction{
+			SlingshotCell: startCell,
+			TargetCell:    endCell,
+			AngleDegrees:  0, // Will be calculated
+			Power:         0.7, // Default power
+			Description:   action.Description,
+		}
+		return g.ExecuteDragAction(dragAction)
+
+	case ActionTypeClick:
+		// Parse target cell and execute click
+		targetCell, err := parseGridCell(action.TargetCell)
+		if err != nil {
+			return fmt.Errorf("invalid target cell %s: %w", action.TargetCell, err)
+		}
+
+		x, y := targetCell.ToPixelCoordinates(g.gridCols, g.gridRows, g.imageWidth, g.imageHeight)
+		log.Printf("[Gameplay] Clicking at %s (%d, %d)", action.TargetCell, x, y)
+
+		err = chromedp.Run(g.ctx,
+			chromedp.MouseClickXY(float64(x), float64(y)),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to click at %s: %w", action.TargetCell, err)
+		}
+		return nil
+
+	case ActionTypeKeyPress, ActionTypeKeyHold, ActionTypeKeyRelease, ActionTypeKeySequence:
+		// Execute keyboard actions
+		return g.ExecuteKeyboardAction(action)
+
+	case ActionTypeWait:
+		// Wait for specified duration
+		duration := time.Duration(action.WaitMs) * time.Millisecond
+		log.Printf("[Gameplay] Waiting for %v", duration)
+		time.Sleep(duration)
+		return nil
+
+	case ActionTypeObserve:
+		// Take screenshot and optionally analyze
+		screenshot, err := CaptureScreenshot(g.ctx, ContextGameplay)
+		if err != nil {
+			return fmt.Errorf("failed to capture screenshot: %w", err)
+		}
+
+		// Save for debugging
+		timestamp := time.Now().Format("20060102_150405")
+		path := fmt.Sprintf("/tmp/gameplay_observe_%s.png", timestamp)
+		if err := os.WriteFile(path, screenshot.Data, 0644); err != nil {
+			log.Printf("[Gameplay] Warning: Failed to save observation screenshot: %v", err)
+		} else {
+			log.Printf("[Gameplay] Observation screenshot saved: %s", path)
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unknown action type: %s", action.Type)
+	}
+}
+
+// ExecuteGameplaySequence executes a full sequence of gameplay actions
+func (g *GameplayAgent) ExecuteGameplaySequence(actions []GameplayActionPlan) error {
+	log.Printf("[Gameplay] Executing action sequence (%d actions)", len(actions))
+
+	for i, action := range actions {
+		log.Printf("[Gameplay] === Action %d/%d: %s ===", i+1, len(actions), action.Type)
+
+		err := g.ExecuteGameplayAction(&action)
+		if err != nil {
+			return fmt.Errorf("action %d (%s) failed: %w", i+1, action.Type, err)
+		}
+
+		log.Printf("[Gameplay] Action %d completed: %s", i+1, action.Description)
+
+		// Small delay between actions for stability
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	log.Printf("[Gameplay] Action sequence completed successfully")
+	return nil
+}
+
 // PlayGameLevel executes a full gameplay loop for one level attempt
 func (g *GameplayAgent) PlayGameLevel(gameName string, gameMechanics string, maxAttempts int) error {
 	log.Printf("[Gameplay] Starting gameplay loop for %s (max attempts: %d)", gameName, maxAttempts)
@@ -402,16 +646,34 @@ Return JSON array of actions:
 [
   {"type": "detect_element", "element_name": "slingshot", "description": "find bird position"},
   {"type": "drag_slingshot", "start_cell": "E7", "end_cell": "C5", "description": "aim at bottom structure"},
+  {"type": "keypress", "key": "ArrowUp", "description": "move character up"},
+  {"type": "key_sequence", "keys": ["w", "w", "d"], "description": "move forward twice and turn right"},
   {"type": "wait", "wait_ms": 5000, "description": "wait for physics"},
-  {"type": "observe", "description": "check if pigs destroyed"}
+  {"type": "observe", "description": "check game state"}
 ]
 
 Available action types:
-- detect_element: Find a game element
-- drag_slingshot: Drag from start_cell to end_cell
-- click: Single click at target_cell
-- wait: Wait for wait_ms milliseconds
-- observe: Analyze current game state`,
+- detect_element: Find a game element (element_name)
+- drag_slingshot: Drag from start_cell to end_cell (for slingshot games)
+- click: Single click at target_cell (for button presses, menu items)
+- keypress: Single key press and release (key: "ArrowUp", "w", "Space", etc.)
+- key_hold: Press and hold key (key, hold_ms)
+- key_release: Release a held key (key)
+- key_sequence: Sequence of key presses (keys: ["w", "a", "s", "d"])
+- wait: Wait for wait_ms milliseconds (for game state changes, animations)
+- observe: Analyze current game state (take screenshot and analyze)
+
+KEYBOARD KEYS:
+- Arrow keys: "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight" (or "Up", "Down", "Left", "Right")
+- Letter keys: "w", "a", "s", "d", etc. (lowercase single characters)
+- Special keys: "Space", "Enter", "Escape", "Tab", "Backspace", "Delete"
+
+GUIDELINES:
+- For keyboard-based games (Pac-Man, platformers, etc.), use keypress or key_sequence
+- For mouse-based games (Angry Birds, etc.), use drag_slingshot or click
+- Use observe to check game state before and after actions
+- Use wait to let animations/physics complete
+- Choose actions based on what you see in the game screenshot`,
 		g.gridCols, g.gridRows, string(rune('A'+g.gridCols-1)), g.gridRows, mechanicsContext)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -90,7 +90,7 @@ func HandleRequest(ctx context.Context, event LambdaEvent) (LambdaResponse, erro
 	var screenshots []*agent.Screenshot
 	var logFilepath string
 
-	err := agent.WithRetry(testCtx, func() error {
+	err = agent.WithRetry(testCtx, func() error {
 		// Create browser manager (always headless in lambda)
 		bm, err := agent.NewBrowserManager(true)
 		if err != nil {

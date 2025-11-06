@@ -61,7 +61,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("🌐 Starting browser...")
 	// Create browser manager
-	bm, err := agent.NewBrowserManager()
+	bm, err := agent.NewBrowserManager(headless)
 	if err != nil {
 		return fmt.Errorf("failed to create browser manager: %w", err)
 	}
