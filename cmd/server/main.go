@@ -913,10 +913,89 @@ func (s *Server) executeTest(job *TestJob) {
 		log.Printf("Could not confirm game started after %d attempts, proceeding anyway...", maxAttempts)
 	}
 
+	// Initialize video recorder (needed for both intelligent and standard gameplay)
+	log.Printf("Initializing video recorder...")
+	videoRecorder := agent.NewVideoRecorder(bm.GetContext())
+
+	// Start video recording early to capture all gameplay
+	log.Printf("Starting video recording...")
+	if err := videoRecorder.StartRecording(); err != nil {
+		log.Printf("Warning: Failed to start video recording: %v", err)
+		log.Printf("Continuing without video recording...")
+	} else {
+		log.Printf("✓ Video recording started")
+	}
+
+	// Declare variables for standard gameplay mode (must be before goto to avoid compilation error)
+	var useCanvasMode bool
+	var focused bool
+	var gameplayDuration time.Duration = 10 * time.Second
+	var gameplayStart time.Time
+	var gameplayScreenshots []*agent.Screenshot
+	var lastScreenshotTime time.Time
+	var screenshotInterval time.Duration = 2 * time.Second
+	var gameplayMode string = "keyboard"
+	var unchangedCount int = 0
+	var lastGameplayHash string = ""
+	const unchangedThreshold = 5
+	var screenWidth int = 1280
+	var screenHeight int = 720
+
+	// === INTELLIGENT GAMEPLAY MODE ===
+	// If game mechanics are provided, use AI-powered gameplay agent
+	// This is inspired by Stagehand's action sequencing and self-healing patterns
+	if job.Request.GameMechanics != "" && visionDOMDetector != nil {
+		log.Printf("🎮 Starting intelligent gameplay mode (game mechanics provided)")
+		log.Printf("Game mechanics: %s", job.Request.GameMechanics)
+
+		// Create gameplay agent
+		gameplayAgent, err := agent.NewGameplayAgent(bm.GetContext(), visionDOMDetector)
+		if err != nil {
+			log.Printf("Warning: Could not create gameplay agent: %v", err)
+			log.Printf("Falling back to standard gameplay mode...")
+		} else {
+			s.updateJob(job.ID, "running", 65, "Playing game with AI-guided actions...")
+
+			// Determine game name from URL (simple extraction)
+			gameName := "unknown"
+			if strings.Contains(strings.ToLower(job.Request.URL), "angry") {
+				gameName = "angry_birds"
+			}
+
+			// Execute AI-powered gameplay loop
+			// This will:
+			// 1. Use vision to detect slingshot and targets
+			// 2. Calculate optimal aim using GPT-4o
+			// 3. Execute precise CDP mouse drags
+			// 4. Cache successful actions for self-healing
+			maxGameplayAttempts := 3 // Number of shots to attempt
+			log.Printf("Executing %d AI-guided gameplay attempts...", maxGameplayAttempts)
+
+			err = gameplayAgent.PlayGameLevel(gameName, job.Request.GameMechanics, maxGameplayAttempts)
+			if err != nil {
+				log.Printf("Warning: Gameplay agent failed: %v", err)
+				log.Printf("Continuing with test anyway...")
+			} else {
+				log.Printf("✓ AI-guided gameplay completed successfully")
+
+				// Show cached successful actions
+				cachedDrags := gameplayAgent.GetCachedDragsForGame(gameName)
+				if len(cachedDrags) > 0 {
+					log.Printf("📦 Cached %d successful actions for future self-healing", len(cachedDrags))
+				}
+			}
+
+			s.updateJob(job.ID, "running", 85, "Finalizing test...")
+
+			// Skip to evidence collection after AI gameplay
+			goto collectEvidence
+		}
+	}
+
+	// === STANDARD GAMEPLAY MODE ===
 	// Detect if game uses canvas or DOM rendering
 	log.Printf("Detecting game rendering type...")
-	var useCanvasMode bool
-	focused, err := detector.FocusGameCanvas()
+	focused, err = detector.FocusGameCanvas()
 	if err != nil || !focused {
 		log.Printf("No canvas detected or focus failed - using DOM/window event mode")
 		useCanvasMode = false
@@ -928,40 +1007,11 @@ func (s *Server) executeTest(job *TestJob) {
 	// Add small delay after detection
 	time.Sleep(200 * time.Millisecond)
 
-	// Initialize video recorder
-	log.Printf("Initializing video recorder...")
-	videoRecorder := agent.NewVideoRecorder(bm.GetContext())
-
-	// Start video recording
-	log.Printf("Starting video recording...")
-	if err := videoRecorder.StartRecording(); err != nil {
-		log.Printf("Warning: Failed to start video recording: %v", err)
-		log.Printf("Continuing without video recording...")
-	} else {
-		log.Printf("✓ Video recording started")
-	}
-
 	s.updateJob(job.ID, "running", 60, "Playing game with keyboard controls...")
 
 	// Simulate realistic gameplay with varied interactions over time
-	// This gives the AI more meaningful data to evaluate
-	gameplayDuration := 10 * time.Second // Much longer gameplay
-	gameplayStart := time.Now()
-
-	// Track screenshots captured during gameplay
-	var gameplayScreenshots []*agent.Screenshot
-	lastScreenshotTime := time.Now()
-	screenshotInterval := 2 * time.Second // Capture every 2 seconds
-
-	// Adaptive gameplay mode - automatically switches between keyboard, mouse clicks, and mouse drags
-	gameplayMode := "keyboard"
-	unchangedCount := 0
-	lastGameplayHash := ""
-	const unchangedThreshold = 5 // Switch modes after 5 unchanged attempts
-
-	// Get screen dimensions for mouse actions
-	screenWidth := 1280  // Default, will be updated from screenshot
-	screenHeight := 720
+	gameplayStart = time.Now()
+	lastScreenshotTime = time.Now()
 
 	log.Printf("Starting %v of adaptive gameplay (starting with keyboard)...", gameplayDuration)
 
@@ -1088,6 +1138,7 @@ func (s *Server) executeTest(job *TestJob) {
 
 	log.Printf("Gameplay simulation completed after %v", time.Since(gameplayStart))
 
+collectEvidence:
 	// Stop video recording
 	var videoPath string
 	if videoRecorder.IsRecording {
