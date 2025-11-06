@@ -203,15 +203,19 @@ func (vr *VideoRecorder) SaveAsMP4(outputPath string) error {
 	return nil
 }
 
-// SaveToTemp saves the video to a temporary file
+// SaveToTemp saves the video to a persistent media directory
 func (vr *VideoRecorder) SaveToTemp() (string, error) {
 	filename := fmt.Sprintf("gameplay_%s_%s.mp4",
 		time.Now().Format("20060102_150405"),
 		uuid.New().String()[:8],
 	)
 
-	tempDir := os.TempDir()
-	filepath := filepath.Join(tempDir, filename)
+	// Use persistent media directory (defined in evidence.go)
+	mediaDir, err := getMediaDir()
+	if err != nil {
+		return "", err
+	}
+	filepath := filepath.Join(mediaDir, filename)
 
 	if err := vr.SaveAsMP4(filepath); err != nil {
 		return "", err

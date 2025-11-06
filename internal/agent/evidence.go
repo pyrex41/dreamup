@@ -67,7 +67,17 @@ func CaptureScreenshot(ctx context.Context, screenshotContext ScreenshotContext)
 	return screenshot, nil
 }
 
-// SaveToTemp saves the screenshot to a temporary directory with a unique filename
+// getMediaDir returns the persistent media directory, creating it if needed
+func getMediaDir() (string, error) {
+	// Use ./data/media for persistent storage (not /tmp which is ephemeral)
+	mediaDir := filepath.Join(".", "data", "media")
+	if err := os.MkdirAll(mediaDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create media directory: %w", err)
+	}
+	return mediaDir, nil
+}
+
+// SaveToTemp saves the screenshot to a persistent directory with a unique filename
 func (s *Screenshot) SaveToTemp() error {
 	// Generate unique filename
 	filename := fmt.Sprintf("screenshot_%s_%s_%s.png",
@@ -76,9 +86,12 @@ func (s *Screenshot) SaveToTemp() error {
 		uuid.New().String()[:8],
 	)
 
-	// Get system temp directory
-	tempDir := os.TempDir()
-	filepath := filepath.Join(tempDir, filename)
+	// Get persistent media directory
+	mediaDir, err := getMediaDir()
+	if err != nil {
+		return err
+	}
+	filepath := filepath.Join(mediaDir, filename)
 
 	// Write file
 	if err := os.WriteFile(filepath, s.Data, 0644); err != nil {

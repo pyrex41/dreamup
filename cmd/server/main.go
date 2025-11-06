@@ -320,9 +320,9 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read screenshot from temp directory
-	tmpDir := os.TempDir()
-	filepath := tmpDir + "/" + filename
+	// Read screenshot from persistent media directory
+	mediaDir := filepath.Join(".", "data", "media")
+	filepath := filepath.Join(mediaDir, filename)
 
 	data, err := os.ReadFile(filepath)
 	if err != nil {
@@ -357,9 +357,9 @@ func (s *Server) handleVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read video from temp directory
-	tmpDir := os.TempDir()
-	filePath := filepath.Join(tmpDir, filename)
+	// Read video from persistent media directory
+	mediaDir := filepath.Join(".", "data", "media")
+	filePath := filepath.Join(mediaDir, filename)
 
 	data, err := os.ReadFile(filePath)
 	if err != nil {
