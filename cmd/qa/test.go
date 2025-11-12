@@ -154,6 +154,30 @@ func runTest(cmd *cobra.Command, args []string) error {
 	// Brief wait for game state to settle (reduced from 1s to 500ms)
 	time.Sleep(500 * time.Millisecond)
 
+	// Collect performance metrics
+	fmt.Println("📊 Collecting performance metrics...")
+	metricsCollector := agent.NewMetricsCollector(bm.GetContext())
+	metrics, err := metricsCollector.CollectAll()
+	if err != nil {
+		fmt.Printf("   ⚠️  Warning: Failed to collect some metrics: %v\n", err)
+	} else {
+		fmt.Println("   ✅ Metrics collected:")
+		if metrics.FPS != nil {
+			fmt.Printf("      FPS: %.1f avg (min: %.1f, max: %.1f)\n",
+				metrics.FPS.AverageFPS, metrics.FPS.MinFPS, metrics.FPS.MaxFPS)
+		}
+		if metrics.LoadTime != nil {
+			fmt.Printf("      Load Time: %dms total\n", metrics.LoadTime.TotalLoadTime)
+			fmt.Printf("      First Contentful Paint: %.1fms\n", metrics.LoadTime.FirstContentfulPaint)
+		}
+		if metrics.Accessibility != nil {
+			fmt.Printf("      Accessibility Score: %d/100 (%d violations)\n",
+				metrics.Accessibility.Score, metrics.Accessibility.ViolationCount)
+		}
+		// Set metrics in report builder
+		reportBuilder.SetPerformanceMetrics(metrics)
+	}
+
 	fmt.Println("📸 Capturing final screenshot...")
 	// Capture final screenshot
 	finalScreenshot, err := agent.CaptureScreenshot(bm.GetContext(), agent.ContextFinal)

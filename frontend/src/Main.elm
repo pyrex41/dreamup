@@ -246,6 +246,7 @@ type alias Evidence =
     , consoleLogs : List ConsoleLog
     , logSummary : LogSummary
     , detectedElements : Maybe (List ( String, String ))
+    , performanceMetrics : Maybe PerformanceMetrics
     }
 
 
@@ -273,6 +274,60 @@ type alias LogSummary =
     , warnings : Int
     , info : Int
     , debug : Int
+    }
+
+
+type alias PerformanceMetrics =
+    { fps : Maybe FPSMetrics
+    , loadTime : Maybe LoadTimeMetrics
+    , accessibility : Maybe AccessibilityReport
+    , collectionTime : String
+    }
+
+
+type alias FPSMetrics =
+    { averageFPS : Float
+    , minFPS : Float
+    , maxFPS : Float
+    , samples : Int
+    , duration : Float
+    }
+
+
+type alias LoadTimeMetrics =
+    { dnsLookup : Int
+    , tcpConnection : Int
+    , serverResponse : Int
+    , pageDownload : Int
+    , domContentLoaded : Int
+    , windowLoad : Int
+    , totalLoadTime : Int
+    , resourceCount : Int
+    , largestResourceSize : Int
+    , largestResourceURL : String
+    , firstPaint : Float
+    , firstContentfulPaint : Float
+    }
+
+
+type alias AccessibilityReport =
+    { score : Int
+    , violationCount : Int
+    , warningCount : Int
+    , passCount : Int
+    , violations : List AccessibilityViolation
+    , warnings : List AccessibilityViolation
+    , summary : String
+    }
+
+
+type alias AccessibilityViolation =
+    { rule : String
+    , impact : String
+    , description : String
+    , helpURL : String
+    , elements : List String
+    , count : Int
     }
 
 
@@ -1632,12 +1687,13 @@ playabilityScoreDecoder =
 
 evidenceDecoder : Decode.Decoder Evidence
 evidenceDecoder =
-    Decode.map5 Evidence
+    Decode.map6 Evidence
         (Decode.field "screenshots" (Decode.list screenshotInfoDecoder))
         (Decode.maybe (Decode.field "video_url" Decode.string))
         (Decode.field "console_logs" (Decode.list consoleLogDecoder))
         (Decode.field "log_summary" logSummaryDecoder)
         (Decode.maybe (Decode.field "detected_elements" (Decode.keyValuePairs Decode.string) |> Decode.map Just) |> Decode.map (Maybe.withDefault Nothing))
+        (Decode.maybe (Decode.field "performance_metrics" performanceMetricsDecoder))
 
 
 screenshotInfoDecoder : Decode.Decoder ScreenshotInfo
@@ -1668,6 +1724,71 @@ logSummaryDecoder =
         (Decode.field "warnings" Decode.int)
         (Decode.field "info" Decode.int)
         (Decode.field "debug" Decode.int)
+
+
+performanceMetricsDecoder : Decode.Decoder PerformanceMetrics
+performanceMetricsDecoder =
+    Decode.map4 PerformanceMetrics
+        (Decode.maybe (Decode.field "fps" fpsMetricsDecoder))
+        (Decode.maybe (Decode.field "load_time" loadTimeMetricsDecoder))
+        (Decode.maybe (Decode.field "accessibility" accessibilityReportDecoder))
+        (Decode.field "collection_time" Decode.string)
+
+
+fpsMetricsDecoder : Decode.Decoder FPSMetrics
+fpsMetricsDecoder =
+    Decode.map5 FPSMetrics
+        (Decode.field "average_fps" Decode.float)
+        (Decode.field "min_fps" Decode.float)
+        (Decode.field "max_fps" Decode.float)
+        (Decode.field "samples" Decode.int)
+        (Decode.field "duration_seconds" Decode.float)
+
+
+loadTimeMetricsDecoder : Decode.Decoder LoadTimeMetrics
+loadTimeMetricsDecoder =
+    Decode.succeed LoadTimeMetrics
+        |> andMap (Decode.field "dns_lookup_ms" Decode.int)
+        |> andMap (Decode.field "tcp_connection_ms" Decode.int)
+        |> andMap (Decode.field "server_response_ms" Decode.int)
+        |> andMap (Decode.field "page_download_ms" Decode.int)
+        |> andMap (Decode.field "dom_content_loaded_ms" Decode.int)
+        |> andMap (Decode.field "window_load_ms" Decode.int)
+        |> andMap (Decode.field "total_load_time_ms" Decode.int)
+        |> andMap (Decode.field "resource_count" Decode.int)
+        |> andMap (Decode.field "largest_resource_bytes" Decode.int)
+        |> andMap (Decode.field "largest_resource_url" Decode.string)
+        |> andMap (Decode.field "first_paint_ms" Decode.float)
+        |> andMap (Decode.field "first_contentful_paint_ms" Decode.float)
+
+
+accessibilityReportDecoder : Decode.Decoder AccessibilityReport
+accessibilityReportDecoder =
+    Decode.map7 AccessibilityReport
+        (Decode.field "score" Decode.int)
+        (Decode.field "violation_count" Decode.int)
+        (Decode.field "warning_count" Decode.int)
+        (Decode.field "pass_count" Decode.int)
+        (Decode.field "violations" (Decode.list accessibilityViolationDecoder))
+        (Decode.field "warnings" (Decode.list accessibilityViolationDecoder))
+        (Decode.field "summary" Decode.string)
+
+
+accessibilityViolationDecoder : Decode.Decoder AccessibilityViolation
+accessibilityViolationDecoder =
+    Decode.map6 AccessibilityViolation
+        (Decode.field "rule" Decode.string)
+        (Decode.field "impact" Decode.string)
+        (Decode.field "description" Decode.string)
+        (Decode.field "help_url" Decode.string)
+        (Decode.field "elements" (Decode.list Decode.string))
+        (Decode.field "count" Decode.int)
+
+
+-- Helper for pipeline-style decoding
+andMap : Decode.Decoder a -> Decode.Decoder (a -> b) -> Decode.Decoder b
+andMap =
+    Decode.map2 (|>)
 
 
 summaryDecoder : Decode.Decoder Summary
@@ -2475,6 +2596,14 @@ viewReport model report =
           viewReportHeader report
         , viewReportSummary report
 
+        -- Performance Metrics (FPS, Load Time, Accessibility)
+        , case report.evidence.performanceMetrics of
+            Just metrics ->
+                viewPerformanceMetrics metrics
+
+            Nothing ->
+                text ""
+
         -- Metrics Visualization (Subtask 2)
         , case report.score of
             Just score ->
@@ -3028,6 +3157,166 @@ viewReportActions model report =
                    ]
              ]
          ]
+
+
+{-| Performance Metrics Section: FPS, Load Time, and Accessibility -}
+viewPerformanceMetrics : PerformanceMetrics -> Html Msg
+viewPerformanceMetrics metrics =
+    div [ class "bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-6" ]
+        [ h3 [ class "text-2xl font-bold text-gray-900 dark:text-white mb-4" ]
+            [ text "⚡ Performance Metrics" ]
+        , div [ class "grid grid-cols-1 md:grid-cols-3 gap-6" ]
+            [ -- FPS Metrics
+              case metrics.fps of
+                Just fps ->
+                    viewFPSMetrics fps
+                Nothing ->
+                    div [ class "bg-gray-50 dark:bg-gray-700 rounded-lg p-4" ]
+                        [ p [ class "text-gray-500 dark:text-gray-400 text-center" ]
+                            [ text "FPS data not available" ]
+                        ]
+
+            -- Load Time Metrics
+            , case metrics.loadTime of
+                Just loadTime ->
+                    viewLoadTimeMetrics loadTime
+                Nothing ->
+                    div [ class "bg-gray-50 dark:bg-gray-700 rounded-lg p-4" ]
+                        [ p [ class "text-gray-500 dark:text-gray-400 text-center" ]
+                            [ text "Load time data not available" ]
+                        ]
+
+            -- Accessibility Report
+            , case metrics.accessibility of
+                Just accessibility ->
+                    viewAccessibilityMetrics accessibility
+                Nothing ->
+                    div [ class "bg-gray-50 dark:bg-gray-700 rounded-lg p-4" ]
+                        [ p [ class "text-gray-500 dark:text-gray-400 text-center" ]
+                            [ text "Accessibility data not available" ]
+                        ]
+            ]
+        ]
+
+
+viewFPSMetrics : FPSMetrics -> Html Msg
+viewFPSMetrics fps =
+    div [ class "bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900 dark:to-blue-800 rounded-lg p-6 space-y-3" ]
+        [ div [ class "flex items-center space-x-2 mb-3" ]
+            [ span [ class "text-2xl" ] [ text "📊" ]
+            , h4 [ class "text-lg font-bold text-gray-900 dark:text-white" ]
+                [ text "Frame Rate (FPS)" ]
+            ]
+        , div [ class "space-y-2" ]
+            [ viewMetricRow "Average" (String.fromFloat (toFloat (round (fps.averageFPS * 10)) / 10) ++ " fps") "text-blue-700 dark:text-blue-300"
+            , viewMetricRow "Min" (String.fromFloat (toFloat (round (fps.minFPS * 10)) / 10) ++ " fps") "text-gray-600 dark:text-gray-400"
+            , viewMetricRow "Max" (String.fromFloat (toFloat (round (fps.maxFPS * 10)) / 10) ++ " fps") "text-gray-600 dark:text-gray-400"
+            , viewMetricRow "Samples" (String.fromInt fps.samples) "text-gray-600 dark:text-gray-400"
+            ]
+        , div [ class "mt-3 pt-3 border-t border-blue-200 dark:border-blue-700" ]
+            [ viewFPSBadge fps.averageFPS ]
+        ]
+
+
+viewLoadTimeMetrics : LoadTimeMetrics -> Html Msg
+viewLoadTimeMetrics loadTime =
+    div [ class "bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900 dark:to-green-800 rounded-lg p-6 space-y-3" ]
+        [ div [ class "flex items-center space-x-2 mb-3" ]
+            [ span [ class "text-2xl" ] [ text "⚡" ]
+            , h4 [ class "text-lg font-bold text-gray-900 dark:text-white" ]
+                [ text "Load Time" ]
+            ]
+        , div [ class "space-y-2" ]
+            [ viewMetricRow "Total Load" (String.fromInt loadTime.totalLoadTime ++ " ms") "text-green-700 dark:text-green-300 font-bold"
+            , viewMetricRow "First Paint" (String.fromFloat (toFloat (round (loadTime.firstPaint * 10)) / 10) ++ " ms") "text-gray-600 dark:text-gray-400"
+            , viewMetricRow "First Contentful Paint" (String.fromFloat (toFloat (round (loadTime.firstContentfulPaint * 10)) / 10) ++ " ms") "text-gray-600 dark:text-gray-400"
+            , viewMetricRow "DOM Content Loaded" (String.fromInt loadTime.domContentLoaded ++ " ms") "text-gray-600 dark:text-gray-400"
+            , viewMetricRow "Resources" (String.fromInt loadTime.resourceCount) "text-gray-600 dark:text-gray-400"
+            ]
+        , div [ class "mt-3 pt-3 border-t border-green-200 dark:border-green-700" ]
+            [ viewLoadTimeBadge loadTime.totalLoadTime ]
+        ]
+
+
+viewAccessibilityMetrics : AccessibilityReport -> Html Msg
+viewAccessibilityMetrics accessibility =
+    div [ class "bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900 dark:to-purple-800 rounded-lg p-6 space-y-3" ]
+        [ div [ class "flex items-center space-x-2 mb-3" ]
+            [ span [ class "text-2xl" ] [ text "♿" ]
+            , h4 [ class "text-lg font-bold text-gray-900 dark:text-white" ]
+                [ text "Accessibility" ]
+            ]
+        , div [ class "text-center mb-3" ]
+            [ div [ class "text-4xl font-bold " ++ getAccessibilityScoreColor accessibility.score ]
+                [ text (String.fromInt accessibility.score ++ "/100") ]
+            ]
+        , div [ class "space-y-2" ]
+            [ viewMetricRow "Violations" (String.fromInt accessibility.violationCount) (if accessibility.violationCount > 0 then "text-red-600 dark:text-red-400 font-bold" else "text-green-600 dark:text-green-400")
+            , viewMetricRow "Warnings" (String.fromInt accessibility.warningCount) "text-yellow-600 dark:text-yellow-400"
+            , viewMetricRow "Passed" (String.fromInt accessibility.passCount) "text-green-600 dark:text-green-400"
+            ]
+        , if accessibility.violationCount > 0 then
+            div [ class "mt-3 pt-3 border-t border-purple-200 dark:border-purple-700" ]
+                [ p [ class "text-xs text-gray-600 dark:text-gray-400" ]
+                    [ text accessibility.summary ]
+                ]
+          else
+            text ""
+        ]
+
+
+viewMetricRow : String -> String -> String -> Html Msg
+viewMetricRow label value colorClass =
+    div [ class "flex justify-between items-center" ]
+        [ span [ class "text-sm text-gray-700 dark:text-gray-300" ] [ text label ]
+        , span [ class ("text-sm font-semibold " ++ colorClass) ] [ text value ]
+        ]
+
+
+viewFPSBadge : Float -> Html Msg
+viewFPSBadge avgFPS =
+    let
+        (badgeText, badgeClass) =
+            if avgFPS >= 55 then
+                ("Excellent", "bg-green-500 text-white")
+            else if avgFPS >= 40 then
+                ("Good", "bg-blue-500 text-white")
+            else if avgFPS >= 25 then
+                ("Fair", "bg-yellow-500 text-white")
+            else
+                ("Poor", "bg-red-500 text-white")
+    in
+    div [ class ("inline-block px-3 py-1 rounded-full text-xs font-bold " ++ badgeClass) ]
+        [ text badgeText ]
+
+
+viewLoadTimeBadge : Int -> Html Msg
+viewLoadTimeBadge totalMs =
+    let
+        (badgeText, badgeClass) =
+            if totalMs < 1000 then
+                ("Fast", "bg-green-500 text-white")
+            else if totalMs < 3000 then
+                ("Good", "bg-blue-500 text-white")
+            else if totalMs < 5000 then
+                ("Moderate", "bg-yellow-500 text-white")
+            else
+                ("Slow", "bg-red-500 text-white")
+    in
+    div [ class ("inline-block px-3 py-1 rounded-full text-xs font-bold " ++ badgeClass) ]
+        [ text badgeText ]
+
+
+getAccessibilityScoreColor : Int -> String
+getAccessibilityScoreColor score =
+    if score >= 90 then
+        "text-green-600 dark:text-green-400"
+    else if score >= 70 then
+        "text-blue-600 dark:text-blue-400"
+    else if score >= 50 then
+        "text-yellow-600 dark:text-yellow-400"
+    else
+        "text-red-600 dark:text-red-400"
 
 
 {-| Media Section: Video Player + Screenshot Carousel -}
